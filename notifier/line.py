@@ -4,21 +4,24 @@ import time
 
 logger = logging.getLogger(__name__)
 
-LINE_NOTIFY_URL = "https://notify-api.line.me/api/notify"
+LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 REQUEST_TIMEOUT = 10
 
-def send_line(token: str, message: str) -> bool:
+def send_line(channel_access_token: str, user_id: str, message: str) -> bool:
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type":  "application/x-www-form-urlencoded",
+        "Authorization": f"Bearer {channel_access_token}",
+        "Content-Type":  "application/json",
     }
-    payload = {"message": message}
+    payload = {
+        "to": user_id,
+        "messages": [{"type": "text", "text": message}]
+    }
 
     try:
         resp = requests.post(
-            LINE_NOTIFY_URL,
+            LINE_API_URL,
             headers=headers,
-            data=payload,
+            json=payload,
             timeout=REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
@@ -33,9 +36,10 @@ def send_line(token: str, message: str) -> bool:
         logger.error(f"LINE通知 通信エラー: {e}")
         return False
 
-def send_line_with_retry(token: str, message: str, max_retry: int = 3) -> bool:
+
+def send_line_with_retry(channel_access_token: str, user_id: str, message: str, max_retry: int = 3) -> bool:
     for attempt in range(1, max_retry + 1):
-        if send_line(token, message):
+        if send_line(channel_access_token, user_id, message):
             return True
         if attempt < max_retry:
             wait = attempt * 5
