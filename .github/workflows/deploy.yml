@@ -1,0 +1,30 @@
+name: Deploy to Google Cloud Functions
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Deploy earthquake_monitor
+        uses: google-github-actions/deploy-cloud-functions@v2
+        with:
+          name: earthquake-monitor
+          runtime: python312
+          region: asia-northeast1
+          entry_point: earthquake_monitor
+          source_dir: .
+          event_trigger_type: google.cloud.pubsub.topic.v1.messagePublished
+          event_trigger_resource: projects/earthquake-notif
