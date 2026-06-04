@@ -18,13 +18,25 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v1
+
       - name: Deploy earthquake_monitor
-        uses: google-github-actions/deploy-cloud-functions@v2
-        with:
-          name: earthquake-monitor
-          runtime: python312
-          region: asia-northeast1
-          entry_point: earthquake_monitor
-          source_dir: .
-          event_trigger_type: google.cloud.pubsub.topic.v1.messagePublished
-          event_trigger_resource: projects/earthquake-notif
+        run: |
+          gcloud functions deploy earthquake-monitor \
+            --gen2 \
+            --runtime=python312 \
+            --region=asia-northeast1 \
+            --source=. \
+            --entry-point=earthquake_monitor \
+            --trigger-topic=earthquake-monitor-topic
+
+      - name: Deploy watchdog_notify
+        run: |
+          gcloud functions deploy watchdog-notify \
+            --gen2 \
+            --runtime=python312 \
+            --region=asia-northeast1 \
+            --source=. \
+            --entry-point=watchdog_notify \
+            --trigger-topic=watchdog-notify-topic
