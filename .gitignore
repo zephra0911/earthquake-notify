@@ -1,0 +1,6 @@
+earthquake-notify.zip
+function_app.py
+host.json
+__pycache__/
+*.pyc
+.env
