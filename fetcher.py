@@ -104,4 +104,25 @@ def _parse_quake_xml(event_id, title, xml_bytes):
                     "pref": pref_name, "area": area_name, "intensity": intensity,
                 })
 
-    return QuakeDetail(
+return QuakeDetail(
+        event_id=event_id, title=title, origin_time=origin_time,
+        max_intensity=max_intensity, tsunami=tsunami,
+        hypocenter=hypocenter, magnitude=magnitude,
+        area_intensities=area_intensities,
+    )
+
+def _find_text(element, path):
+    el = element.find(path, NS)
+    return el.text.strip() if el is not None and el.text else None
+
+def _normalize_tsunami(raw):
+    mapping = {
+        "なし": "なし", "調査中": "調査中",
+        "津波注意報": "⚠️津波注意報",
+        "津波警報": "🚨津波警報",
+        "大津波警報": "🚨大津波警報",
+    }
+    for key, val in mapping.items():
+        if key in raw:
+            return val
+    return raw if raw else "なし"
