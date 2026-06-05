@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-FEED_URL = "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml"
+FEED_URL = "https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml"
 REQUEST_TIMEOUT = 10
 
 NS = {
