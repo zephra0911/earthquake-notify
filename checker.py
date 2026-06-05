@@ -15,9 +15,6 @@ INTENSITY_ORDER = {
     "5-": 5, "5+": 6, "6-": 7, "6+": 8, "7": 9,
 }
 
-THRESHOLD_TOKYO_23KU = "5+"
-THRESHOLD_NATIONWIDE = "6-"
-
 @dataclass
 class CheckResult:
     should_notify: bool
@@ -30,7 +27,7 @@ def _intensity_value(intensity: str) -> int:
 def _is_gte(intensity: str, threshold: str) -> bool:
     return _intensity_value(intensity) >= _intensity_value(threshold)
 
-def check_notify(detail: QuakeDetail) -> CheckResult:
+def check_notify(detail: QuakeDetail, threshold_tokyo_23ku: str = "5+", threshold_nationwide: str = "6-") -> CheckResult:
     triggered_areas = []
 
     for item in detail.area_intensities:
@@ -38,12 +35,12 @@ def check_notify(detail: QuakeDetail) -> CheckResult:
         pref      = item.get("pref", "")
         intensity = item.get("intensity", "")
 
-        if area in TOKYO_23KU and _is_gte(intensity, THRESHOLD_TOKYO_23KU):
+        if area in TOKYO_23KU and _is_gte(intensity, threshold_tokyo_23ku):
             triggered_areas.append({
                 "pref": pref, "area": area,
                 "intensity": intensity, "trigger": "23ku",
             })
-        elif _is_gte(intensity, THRESHOLD_NATIONWIDE):
+        elif _is_gte(intensity, threshold_nationwide):
             triggered_areas.append({
                 "pref": pref, "area": area,
                 "intensity": intensity, "trigger": "nationwide",
@@ -53,10 +50,10 @@ def check_notify(detail: QuakeDetail) -> CheckResult:
         return CheckResult(should_notify=False, reason="閾値以下のため通知不要", triggered_areas=[])
 
     reasons = []
-    if any(a["trigger"] == "23ku"       for a in triggered_areas):
-        reasons.append("東京23区で震度5強以上を観測")
-    if any(a["trigger"] == "nationwide" for a in triggered_areas):
-        reasons.append("全国で震度6弱以上を観測")
+    if any(a["trigger"] == "23ku"        for a in triggered_areas):
+        reasons.append("東京23区で震度{}以上を観測".format(_intensity_to_label(threshold_tokyo_23ku)))
+    if any(a["trigger"] == "nationwide"  for a in triggered_areas):
+        reasons.append("全国で震度{}以上を観測".format(_intensity_to_label(threshold_nationwide)))
 
     return CheckResult(should_notify=True, reason=" / ".join(reasons), triggered_areas=triggered_areas)
 
@@ -94,4 +91,23 @@ def build_detail_message(detail: QuakeDetail, result: CheckResult) -> str:
     current_pref = ""
     for item in sorted_areas:
         if item["pref"] != current_pref:
-            lines.appen
+            lines.append(f"─ {item['pref']} ─")
+            current_pref = item["pref"]
+        lines.append(f"  {item['area']}: {_intensity_to_label(item['intensity'])}")
+
+    lines += ["", f"【判定】{result.reason}", "⚠️ PMH稼働確認を実施してください"]
+    return "\n".join(lines)
+
+def _intensity_to_label(intensity: str) -> str:
+    mapping = {
+        "1": "震度1", "2": "震度2", "3": "震度3", "4": "震度4",
+        "5-": "震度5弱", "5+": "震度5強",
+        "6-": "震度6弱", "6+": "震度6強", "7": "震度7",
+    }
+    return mapping.get(intensity.strip(), f"震度{intensity}")
+
+def _format_time(iso_time: str) -> str:
+    try:
+        return iso_time.split("T")[1][:5]
+    except (IndexError, AttributeError):
+        return iso_time

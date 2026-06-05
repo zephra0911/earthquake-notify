@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 logging.basicConfig(
     level=logging.INFO,
-    stream=sys.stdout,
+    stream=sys.stderr,
     format="%(asctime)s %(levelname)s %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -14,6 +14,7 @@ from fetcher import fetch_feed, fetch_quake_detail
 from checker import check_notify, build_alert_message, build_detail_message
 from store import get_firestore_client, is_alerted, is_detailed, mark_alerted, mark_detailed
 from notifier.line import send_line_with_retry
+from notifier.email import send_email_with_retry
 
 
 def earthquake_monitor(event, context):
@@ -32,6 +33,8 @@ def earthquake_monitor(event, context):
         logger.error(f"フィード取得失敗: {e}")
         return "ERROR", 500
 
+    logger.info(f"取得エントリ数: {len(entries)}")
+
     for entry in entries:
         try:
             _process_entry(entry, cfg, client)
@@ -44,22 +47,29 @@ def earthquake_monitor(event, context):
 
 
 def watchdog_notify(event, context):
+    try:
+        cfg = load_config()
+    except Exception as e:
+        logger.error(f"初期化失敗: {e}")
+        return "ERROR", 500
+
+    # 死活監視通知がオフの場合はスキップ
+    if not cfg.watchdog_enabled:
+        logger.info("死活監視通知はオフです（WATCHDOG_ENABLED=false）")
+        return "OK", 200
+
     now = datetime.now(timezone.utc).strftime("%m/%d %H:%M UTC")
     message = f"【監視稼働中】✅\n{now}\n地震監視システム 正常稼働中"
 
-    try:
-        cfg = load_config()
-        ok  = send_line_with_retry(
-            cfg.line_channel_access_token,
-            cfg.line_user_id,
-            message,
-        )
-        if ok:
-            logger.info("死活確認メッセージ送信完了")
-        else:
-            logger.error("死活確認メッセージ送信失敗")
-    except Exception as e:
-        logger.error(f"死活確認 失敗: {e}")
+    ok = send_line_with_retry(
+        cfg.line_channel_access_token,
+        cfg.line_user_id,
+        message,
+    )
+    if ok:
+        logger.info("死活確認メッセージ送信完了")
+    else:
+        logger.error("死活確認メッセージ送信失敗")
 
     return "OK", 200
 
@@ -75,20 +85,37 @@ def _process_entry(entry, cfg, client) -> None:
         if detail is None:
             return
 
-        result = check_notify(detail)
+        result = check_notify(
+            detail,
+            threshold_tokyo_23ku=cfg.threshold_tokyo_23ku,
+            threshold_nationwide=cfg.threshold_nationwide,
+        )
         if not result.should_notify:
             logger.info(f"通知不要: {entry.event_id} / {result.reason}")
             return
 
         logger.info(f"通知条件合致（速報）: {result.reason}")
         message = build_alert_message(detail, result)
+        subject = "【地震速報】⚠️ PMH稼働確認を準備してください"
 
-        ok = send_line_with_retry(
+        # LINE通知
+        line_ok = send_line_with_retry(
             cfg.line_channel_access_token,
             cfg.line_user_id,
             message,
         )
-        if ok:
+
+        # メール通知（有効な場合）
+        if cfg.email_enabled:
+            send_email_with_retry(
+                cfg.email_from,
+                cfg.email_to,
+                cfg.email_password,
+                subject,
+                message,
+            )
+
+        if line_ok:
             mark_alerted(client, entry.event_id)
         else:
             logger.error(f"速報通知 LINE送信失敗: {entry.event_id}")
@@ -104,15 +131,32 @@ def _process_entry(entry, cfg, client) -> None:
         if detail is None:
             return
 
-        result = check_notify(detail)
+        result = check_notify(
+            detail,
+            threshold_tokyo_23ku=cfg.threshold_tokyo_23ku,
+            threshold_nationwide=cfg.threshold_nationwide,
+        )
         message = build_detail_message(detail, result)
+        subject = "【地震詳細・続報】⚠️ PMH稼働確認を実施してください"
 
-        ok = send_line_with_retry(
+        # LINE通知
+        line_ok = send_line_with_retry(
             cfg.line_channel_access_token,
             cfg.line_user_id,
             message,
         )
-        if ok:
+
+        # メール通知（有効な場合）
+        if cfg.email_enabled:
+            send_email_with_retry(
+                cfg.email_from,
+                cfg.email_to,
+                cfg.email_password,
+                subject,
+                message,
+            )
+
+        if line_ok:
             mark_detailed(client, entry.event_id)
         else:
             logger.error(f"続報通知 LINE送信失敗: {entry.event_id}")
