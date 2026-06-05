@@ -1,19 +1,20 @@
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 try:
     import google.cloud.logging
     client_log = google.cloud.logging.Client()
     client_log.setup_logging()
 except Exception:
-    logging.basicConfig(
-        level=logging.INFO,
-        stream=sys.stderr,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
-
-logger = logging.getLogger(__name__)
+    pass
 
 from config import load_config
 from fetcher import fetch_feed, fetch_quake_detail
@@ -21,6 +22,8 @@ from checker import check_notify, build_alert_message, build_detail_message
 from store import get_firestore_client, is_alerted, is_detailed, mark_alerted, mark_detailed
 from notifier.line import send_line_with_retry
 from notifier.email import send_email_with_retry
+
+JST = timezone(timedelta(hours=9))
 
 
 def earthquake_monitor(event, context):
@@ -59,12 +62,11 @@ def watchdog_notify(event, context):
         logger.error(f"初期化失敗: {e}")
         return "ERROR", 500
 
-    # 死活監視通知がオフの場合はスキップ
     if not cfg.watchdog_enabled:
         logger.info("死活監視通知はオフです（WATCHDOG_ENABLED=false）")
         return "OK", 200
 
-    now = datetime.now(timezone.utc).strftime("%m/%d %H:%M UTC")
+    now = datetime.now(JST).strftime("%m/%d %H:%M JST")
     message = f"【監視稼働中】✅\n{now}\n地震監視システム 正常稼働中"
 
     ok = send_line_with_retry(
@@ -104,14 +106,12 @@ def _process_entry(entry, cfg, client) -> None:
         message = build_alert_message(detail, result)
         subject = "【地震速報】⚠️ PMH稼働確認を準備してください"
 
-        # LINE通知
         line_ok = send_line_with_retry(
             cfg.line_channel_access_token,
             cfg.line_user_id,
             message,
         )
 
-        # メール通知（有効な場合）
         if cfg.email_enabled:
             send_email_with_retry(
                 cfg.email_from,
@@ -145,14 +145,12 @@ def _process_entry(entry, cfg, client) -> None:
         message = build_detail_message(detail, result)
         subject = "【地震詳細・続報】⚠️ PMH稼働確認を実施してください"
 
-        # LINE通知
         line_ok = send_line_with_retry(
             cfg.line_channel_access_token,
             cfg.line_user_id,
             message,
         )
 
-        # メール通知（有効な場合）
         if cfg.email_enabled:
             send_email_with_retry(
                 cfg.email_from,
