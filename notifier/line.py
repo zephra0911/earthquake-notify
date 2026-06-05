@@ -7,10 +7,11 @@ logger = logging.getLogger(__name__)
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 REQUEST_TIMEOUT = 10
 
+
 def send_line(channel_access_token: str, user_id: str, message: str) -> bool:
     headers = {
         "Authorization": f"Bearer {channel_access_token}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json; charset=utf-8",
     }
     payload = {
         "to": user_id,
