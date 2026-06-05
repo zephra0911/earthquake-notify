@@ -2,11 +2,17 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-logging.basicConfig(
-    level=logging.INFO,
-    stream=sys.stderr,
-    format="%(asctime)s %(levelname)s %(message)s"
-)
+try:
+    import google.cloud.logging
+    client_log = google.cloud.logging.Client()
+    client_log.setup_logging()
+except Exception:
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
 logger = logging.getLogger(__name__)
 
 from config import load_config
