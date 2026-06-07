@@ -84,18 +84,47 @@ def mark_detailed(client, event_id: str) -> bool:
             return False
 
 
-def get_recent_earthquakes(client, hours: int = 25) -> list:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+def get_recent_earthquakes(
+    client,
+    since: datetime = None,
+    until: datetime = None,
+    hours: int = 25,
+) -> list:
+    if since is None:
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
     try:
-        docs = (
-            client.collection(COLLECTION_NAME)
-            .where("alerted_at", ">=", cutoff)
-            .stream()
-        )
-        return [doc.to_dict() for doc in docs]
+        query = client.collection(COLLECTION_NAME).where("alerted_at", ">=", since)
+        if until is not None:
+            query = query.where("alerted_at", "<", until)
+        return [doc.to_dict() for doc in query.stream()]
     except Exception as e:
         logger.error(f"地震記録取得失敗: {e}")
         return []
+
+
+WEATHER_COLLECTION_NAME = "weather_alert_notify"
+
+
+def is_weather_alerted(client, event_id: str) -> bool:
+    try:
+        doc = client.collection(WEATHER_COLLECTION_NAME).document(_sanitize_key(event_id)).get()
+        return doc.exists
+    except Exception as e:
+        logger.error(f"気象警報状態取得失敗: {e}")
+        return False
+
+
+def mark_weather_alerted(client, event_id: str) -> bool:
+    try:
+        client.collection(WEATHER_COLLECTION_NAME).document(_sanitize_key(event_id)).set({
+            "status":     "ALERTED",
+            "alerted_at": datetime.now(timezone.utc),
+        })
+        logger.info(f"気象警報済みマーク完了: {event_id}")
+        return True
+    except Exception as e:
+        logger.error(f"気象警報済みマーク失敗: {e}")
+        return False
 
 
 def _sanitize_key(event_id: str) -> str:

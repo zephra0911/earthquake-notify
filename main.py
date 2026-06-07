@@ -7,11 +7,12 @@ import functions_framework
 from datetime import datetime, timezone, timedelta
 
 from config import load_config
-from fetcher import fetch_feed, fetch_quake_detail
+from fetcher import fetch_feed, fetch_quake_detail, fetch_weather_feed, fetch_weather_detail
 from checker import check_notify, build_alert_message, build_detail_message
 from store import (
     get_firestore_client, is_alerted, is_detailed,
     mark_alerted, mark_detailed, get_recent_earthquakes,
+    is_weather_alerted, mark_weather_alerted,
 )
 from notifier.line import send_line_with_retry, reply_line
 from notifier.email import send_email_with_retry
@@ -52,6 +53,17 @@ def earthquake_monitor(_cloud_event):
         except Exception as e:
             logger.error(f"エントリ処理失敗 ({entry.event_id}): {e}")
             continue
+
+    if cfg.weather_alert_enabled:
+        try:
+            weather_entries = fetch_weather_feed()
+            for w_entry in weather_entries:
+                try:
+                    _process_weather_entry(w_entry, cfg, client)
+                except Exception as e:
+                    logger.error(f"気象警報エントリ処理失敗 ({w_entry.event_id}): {e}")
+        except Exception as e:
+            logger.error(f"気象警報フィード取得失敗: {e}")
 
     logger.info("=== 地震監視 完了 ===")
 
@@ -143,9 +155,16 @@ def daily_summary(_cloud_event):
         logger.error(f"初期化失敗: {e}")
         return
 
-    records    = get_recent_earthquakes(client, hours=25)
+    # 昨日09:00 JST 〜 本日09:00 JST を集計対象とする
+    today_9 = datetime.now(JST).replace(hour=9, minute=0, second=0, microsecond=0)
+    yest_9  = today_9 - timedelta(days=1)
+    records    = get_recent_earthquakes(
+        client,
+        since=yest_9.astimezone(timezone.utc),
+        until=today_9.astimezone(timezone.utc),
+    )
     ai_comment = _generate_safety_comment(records)
-    message    = _build_daily_summary_message(records, ai_comment)
+    message    = _build_daily_summary_message(records, ai_comment, yest_9, today_9)
 
     ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
     if ok:
@@ -238,17 +257,28 @@ def _generate_safety_comment(records: list) -> str:
         return "本日も安全な一日をお過ごしください。"
 
 
-def _build_daily_summary_message(records: list, ai_comment: str) -> str:
-    date_str = datetime.now(JST).strftime("%Y/%m/%d")
+def _build_daily_summary_message(
+    records: list,
+    ai_comment: str,
+    since: datetime,
+    until: datetime,
+) -> str:
+    date_str  = until.strftime("%Y/%m/%d")
+    since_str = since.strftime("%m/%d %H:%M")
+    until_str = until.strftime("%m/%d %H:%M")
+    threshold_status = "⚠️ 閾値超過あり" if records else "✅ 閾値超過なし"
+
     lines = [
         f"【日次サマリー】{date_str}",
+        f"対象: {since_str} 〜 {until_str} JST",
         "",
         f"🤖 {ai_comment}",
         "",
+        threshold_status,
     ]
 
     if records:
-        lines.append(f"▼ 昨日の通知地震（{len(records)}件）")
+        lines.append(f"▼ 通知した地震（{len(records)}件）")
         for r in records[:5]:
             hypocenter = r.get("hypocenter", "不明")
             magnitude  = r.get("magnitude", "不明")
@@ -257,7 +287,7 @@ def _build_daily_summary_message(records: list, ai_comment: str) -> str:
         if len(records) > 5:
             lines.append(f"  … 他 {len(records) - 5} 件")
     else:
-        lines.append("▼ 昨日の通知地震: なし")
+        lines.append("▼ 通知した地震: なし（閾値以下）")
 
     lines += ["", "状況確認は『状況は？』と入力してください"]
     return "\n".join(lines)
@@ -305,7 +335,8 @@ def _build_status_message(details: list) -> str:
         intensity  = d.max_intensity or "-"
         origin     = _format_origin_time(d.origin_time)
         tsunami    = f" {d.tsunami}" if d.tsunami and d.tsunami != "なし" else ""
-        lines.append(f"  [{origin}] {hypocenter} M{magnitude} 最大震度{intensity}{tsunami}")
+        lines.append(f"  [{origin}]")
+        lines.append(f"  {hypocenter} M{magnitude} 最大震度{intensity}{tsunami}")
 
     return "\n".join(lines)
 
@@ -316,3 +347,56 @@ def _format_origin_time(origin_time: str) -> str:
         return dt.astimezone(JST).strftime("%m/%d %H:%M")
     except Exception:
         return origin_time[:16] if len(origin_time) >= 16 else origin_time
+
+
+def _process_weather_entry(entry, cfg, client) -> None:
+    if is_weather_alerted(client, entry.event_id):
+        return
+
+    detail = fetch_weather_detail(entry)
+    if detail is None:
+        return
+
+    message = _build_weather_alert_message(detail)
+    ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
+    if ok:
+        mark_weather_alerted(client, entry.event_id)
+        logger.info(f"気象警報通知完了: {entry.event_id} ({detail.info_type})")
+    else:
+        logger.error(f"気象警報 LINE送信失敗: {entry.event_id}")
+
+
+def _build_weather_alert_message(detail) -> str:
+    is_cancel = detail.info_type in ("取消",)
+    is_update = detail.info_type in ("更新", "訂正")
+
+    if detail.is_special:
+        kind_label = "気象特別警報"
+        base_emoji = "🚨"
+    else:
+        kind_label = "気象警報・注意報"
+        base_emoji = "⚠️"
+
+    type_map = {"発表": "発表", "更新": "更新", "訂正": "訂正", "取消": "解除"}
+    type_label = type_map.get(detail.info_type, detail.info_type)
+    icon = "✅" if is_cancel else base_emoji
+
+    now_str = datetime.now(JST).strftime("%m/%d %H:%M JST")
+    lines = [f"{icon}【{kind_label} {type_label}】{now_str}"]
+
+    if detail.headline:
+        lines += ["", detail.headline]
+
+    shown_areas = detail.areas[:5]
+    for area in shown_areas:
+        lines.append("")
+        lines.append(f"  📍{area['name']}")
+        if area["warnings"]:
+            lines.append(f"    発表: {', '.join(area['warnings'])}")
+        if area["cancelled"]:
+            lines.append(f"    解除: {', '.join(area['cancelled'])}")
+
+    if len(detail.areas) > 5:
+        lines.append(f"  … 他 {len(detail.areas) - 5} 地域")
+
+    return "\n".join(lines)
