@@ -53,6 +53,8 @@ LINE Messaging API + Gmail SMTP
 |--------|---------|------|
 | `earthquake-monitor` | Pub/Sub（1分毎） | 地震監視メイン |
 | `watchdog-notify` | Pub/Sub（15分毎） | 死活確認通知 |
+| `daily-summary` | Pub/Sub（毎朝9時JST） | 日次サマリー・AIコメント通知 |
+| `line-webhook` | HTTP | LINE「状況は？」返信 |
 
 ---
 
@@ -60,7 +62,7 @@ LINE Messaging API + Gmail SMTP
 
 ```
 earthquake-notify/
-├── main.py              # エントリーポイント（earthquake_monitor, watchdog_notify）
+├── main.py              # エントリーポイント（earthquake_monitor, watchdog_notify, daily_summary, line_webhook）
 ├── config.py            # 環境変数管理
 ├── fetcher.py           # 気象庁XML取得
 ├── checker.py           # 震度判定・メッセージ生成
@@ -89,6 +91,8 @@ earthquake-notify/
 | `EMAIL_FROM` | 送信元Gmailアドレス | - |
 | `EMAIL_TO` | 送信先メールアドレス | - |
 | `EMAIL_PASSWORD` | Gmailアプリパスワード | - |
+| `LINE_CHANNEL_SECRET` | LINE Webhookの署名検証用シークレット | `line_webhook`使用時に必須 |
+| `ANTHROPIC_API_KEY` | Claude API キー（日次サマリーのAIコメント生成） | `daily_summary`使用時に必須 |
 
 ---
 
@@ -153,7 +157,7 @@ earthquake_monitor(None, None)
 |------|-----|
 | コレクション名 | `earthquake_notify` |
 | ドキュメントID | EventID（サニタイズ済み） |
-| フィールド | `status`, `alerted_at`, `detailed_at` |
+| フィールド | `status`, `alerted_at`(Timestamp), `detailed_at`, `hypocenter`, `magnitude`, `max_intensity`, `origin_time`, `tsunami` |
 
 状態: `ALERTED`（速報済み）→ `DETAILED`（続報済み）
 
@@ -162,16 +166,16 @@ earthquake_monitor(None, None)
 ## TODO
 
 ### 優先度高
-- [ ] 毎朝9時 日次サマリー通知機能
-  - Cloud Schedulerに毎朝9時（JST）のジョブを追加
-  - Firestoreから前日〜当日朝の地震記録を取得
-  - AIによる「今日の安全コメント」を生成
+- [x] 毎朝9時 日次サマリー通知機能
+  - Cloud Schedulerに毎朝9時（JST）のジョブを追加（`daily-summary-topic` Pub/Sub）
+  - Firestoreから前日〜当日朝の地震記録を取得（`alerted_at` Timestamp範囲クエリ）
+  - AIによる「今日の安全コメント」を生成（Claude claude-opus-4-8）
   - 末尾に「状況確認は『状況は？』と入力」の案内を追加
 
-- [ ] LINE「状況は？」サマリー返信機能
-  - `line_webhook`関数を追加
+- [x] LINE「状況は？」サマリー返信機能
+  - `line_webhook`関数を追加（HTTPトリガー、署名検証付き）
   - Cloud FunctionsにHTTPトリガーで新規デプロイ
-  - LINE DevelopersコンソールでWebhook URLを登録
+  - LINE DevelopersコンソールでWebhook URLを登録（要手動設定）
 
 ### 優先度低
 - [ ] チームメンバーをLINEグループに追加

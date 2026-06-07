@@ -40,3 +40,24 @@ jobs:
             --source=. \
             --entry-point=watchdog_notify \
             --trigger-topic=watchdog-notify-topic
+
+      - name: Deploy daily_summary
+        run: |
+          gcloud functions deploy daily-summary \
+            --gen2 \
+            --runtime=python312 \
+            --region=asia-northeast1 \
+            --source=. \
+            --entry-point=daily_summary \
+            --trigger-topic=daily-summary-topic
+
+      - name: Deploy line_webhook
+        run: |
+          gcloud functions deploy line-webhook \
+            --gen2 \
+            --runtime=python312 \
+            --region=asia-northeast1 \
+            --source=. \
+            --entry-point=line_webhook \
+            --trigger-http \
+            --allow-unauthenticated

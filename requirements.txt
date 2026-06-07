@@ -1,4 +1,5 @@
-functions-framework
+functions-framework==3.*
 google-cloud-firestore
 google-cloud-logging
 requests
+anthropic

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -39,13 +39,22 @@ def is_detailed(client, event_id: str) -> bool:
     return get_status(client, event_id) == STATUS_DETAILED
 
 
-def mark_alerted(client, event_id: str) -> bool:
+def mark_alerted(client, event_id: str, detail=None) -> bool:
     try:
-        client.collection(COLLECTION_NAME).document(_sanitize_key(event_id)).set({
+        data = {
             "status":      STATUS_ALERTED,
-            "alerted_at":  _now_iso(),
-            "detailed_at": "",
-        })
+            "alerted_at":  datetime.now(timezone.utc),
+            "detailed_at": None,
+        }
+        if detail is not None:
+            data.update({
+                "hypocenter":    getattr(detail, "hypocenter", "") or "",
+                "magnitude":     getattr(detail, "magnitude", "") or "",
+                "max_intensity": getattr(detail, "max_intensity", "") or "",
+                "origin_time":   getattr(detail, "origin_time", "") or "",
+                "tsunami":       getattr(detail, "tsunami", "") or "",
+            })
+        client.collection(COLLECTION_NAME).document(_sanitize_key(event_id)).set(data)
         logger.info(f"速報済みマーク完了: {event_id}")
         return True
     except Exception as e:
@@ -73,6 +82,20 @@ def mark_detailed(client, event_id: str) -> bool:
         except Exception as e2:
             logger.error(f"続報済みマーク失敗: {e2}")
             return False
+
+
+def get_recent_earthquakes(client, hours: int = 25) -> list:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    try:
+        docs = (
+            client.collection(COLLECTION_NAME)
+            .where("alerted_at", ">=", cutoff)
+            .stream()
+        )
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        logger.error(f"地震記録取得失敗: {e}")
+        return []
 
 
 def _sanitize_key(event_id: str) -> str:
