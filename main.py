@@ -272,24 +272,23 @@ def _build_daily_summary_message(
         f"【日次サマリー】{date_str}",
         f"対象: {since_str} 〜 {until_str} JST",
         "",
-        f"🤖 {ai_comment}",
-        "",
         threshold_status,
     ]
 
     if records:
         lines.append(f"▼ 通知した地震（{len(records)}件）")
         for r in records[:5]:
-            hypocenter = r.get("hypocenter", "不明")
-            magnitude  = r.get("magnitude", "不明")
-            intensity  = r.get("max_intensity", "不明")
-            lines.append(f"  {hypocenter} M{magnitude} 最大震度{intensity}")
+            hypocenter   = r.get("hypocenter", "不明")
+            magnitude    = r.get("magnitude", "")
+            intensity    = r.get("max_intensity", "不明")
+            mag_str      = f" M{magnitude}" if magnitude else ""
+            lines.append(f"  {hypocenter}{mag_str} 最大震度{intensity}")
         if len(records) > 5:
             lines.append(f"  … 他 {len(records) - 5} 件")
     else:
         lines.append("▼ 通知した地震: なし（閾値以下）")
 
-    lines += ["", "状況確認は『状況は？』と入力してください"]
+    lines += ["", f"🤖 {ai_comment}", "状況確認は『状況は？』と入力してください。"]
     return "\n".join(lines)
 
 
@@ -331,12 +330,12 @@ def _build_status_message(details: list) -> str:
     ]
     for d in details:
         hypocenter = d.hypocenter or "不明"
-        magnitude  = d.magnitude or "不明"
+        mag_str    = f" M{d.magnitude}" if d.magnitude else ""
         intensity  = d.max_intensity or "-"
         origin     = _format_origin_time(d.origin_time)
         tsunami    = f" {d.tsunami}" if d.tsunami and d.tsunami != "なし" else ""
         lines.append(f"  [{origin}]")
-        lines.append(f"  {hypocenter} M{magnitude} 最大震度{intensity}{tsunami}")
+        lines.append(f"  {hypocenter}{mag_str} 最大震度{intensity}{tsunami}")
 
     return "\n".join(lines)
 
@@ -367,36 +366,63 @@ def _process_weather_entry(entry, cfg, client) -> None:
 
 
 def _build_weather_alert_message(detail) -> str:
-    is_cancel = detail.info_type in ("取消",)
-    is_update = detail.info_type in ("更新", "訂正")
+    type_map   = {"発表": "発表", "更新": "更新", "訂正": "訂正", "取消": "解除"}
+    type_label = type_map.get(detail.info_type, "発表")
+    is_cancel  = detail.info_type == "取消"
 
     if detail.is_special:
         kind_label = "気象特別警報"
-        base_emoji = "🚨"
+        icon       = "✅" if is_cancel else "🚨"
     else:
         kind_label = "気象警報・注意報"
-        base_emoji = "⚠️"
-
-    type_map = {"発表": "発表", "更新": "更新", "訂正": "訂正", "取消": "解除"}
-    type_label = type_map.get(detail.info_type, detail.info_type)
-    icon = "✅" if is_cancel else base_emoji
+        icon       = "✅" if is_cancel else "⚠️"
 
     now_str = datetime.now(JST).strftime("%m/%d %H:%M JST")
-    lines = [f"{icon}【{kind_label} {type_label}】{now_str}"]
+    header  = f"{icon}【{kind_label} {type_label}】{now_str}"
 
-    if detail.headline:
-        lines += ["", detail.headline]
+    summary = _build_weather_summary(detail.areas)
+    return f"{header}\n{summary}" if summary else header
 
-    shown_areas = detail.areas[:5]
-    for area in shown_areas:
-        lines.append("")
-        lines.append(f"  📍{area['name']}")
-        if area["warnings"]:
-            lines.append(f"    発表: {', '.join(area['warnings'])}")
-        if area["cancelled"]:
-            lines.append(f"    解除: {', '.join(area['cancelled'])}")
 
-    if len(detail.areas) > 5:
-        lines.append(f"  … 他 {len(detail.areas) - 5} 地域")
+def _warning_severity(w: str) -> int:
+    if "特別警報" in w:
+        return 3
+    if "警報" in w:
+        return 2
+    return 1  # 注意報
 
-    return "\n".join(lines)
+
+def _build_weather_summary(areas: list, max_chars: int = 80) -> str:
+    # 警報種別ごとに対象地域を集約
+    by_type: dict[str, list[str]]      = {}
+    by_cancelled: dict[str, list[str]] = {}
+
+    for area in areas:
+        for w in area["warnings"]:
+            by_type.setdefault(w, []).append(area["name"])
+        for w in area["cancelled"]:
+            by_cancelled.setdefault(w, []).append(area["name"])
+
+    # 深刻度の高い順にソート
+    active    = sorted(by_type.items(),      key=lambda x: _warning_severity(x[0]), reverse=True)
+    cancelled = sorted(by_cancelled.items(), key=lambda x: _warning_severity(x[0]), reverse=True)
+
+    parts = [f"{w}: {'・'.join(names)}"          for w, names in active]
+    parts += [f"{w}（解除）: {'・'.join(names)}" for w, names in cancelled]
+
+    # 80字以内に収める
+    result = ""
+    for i, part in enumerate(parts):
+        sep       = " / " if result else ""
+        candidate = result + sep + part
+        if len(candidate) <= max_chars:
+            result = candidate
+        else:
+            suffix = f" 他{len(parts) - i}件"
+            if result and len(result) + len(suffix) <= max_chars:
+                result += suffix
+            elif not result:
+                result = part[:max_chars - 1] + "…"
+            break
+
+    return result

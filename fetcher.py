@@ -235,7 +235,7 @@ def _parse_weather_xml(event_id: str, code: str, xml_bytes: bytes) -> Optional[W
     if ctrl_status in ("訓練", "試験"):
         return None
 
-    info_type = _wfind_text(root, ".//jmx_ib:InfoType") or "不明"
+    info_type = _wfind_text(root, ".//jmx_ib:InfoType") or ""
     info_kind = _wfind_text(root, ".//jmx_ib:InfoKind") or "気象警報・注意報"
     headline  = _wfind_text(root, ".//jmx_ib:Headline/jmx_ib:Text") or ""
     issued_at = _wfind_text(root, ".//jmx_ib:ReportDateTime") or ""
