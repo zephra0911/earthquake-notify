@@ -33,7 +33,7 @@ def send_email(from_addr: str, to_addr: str, password: str, subject: str, body: 
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
             server.login(from_addr, password)
-            server.sendmail(from_addr, to_addr.split(","), msg.as_string())
+            server.send_message(msg)
 
         logger.info(f"メール送信成功: {to_addr}")
         return True

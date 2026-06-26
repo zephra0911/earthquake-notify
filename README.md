@@ -178,6 +178,10 @@ earthquake_monitor(None, None)
   - LINE DevelopersコンソールでWebhook URLを登録（要手動設定）
 
 ### 優先度低
+- [ ] 続報（VXSE53）のEventID紐付けバグ修正
+  - 現状、VXSE53のevent_idはVXSE51と異なるため、is_detailed/is_alertedの判定が機能しない
+  - 震源地・地震発生時刻等で同一地震を紐付ける仕組みが必要
+
 - [ ] チームメンバーをLINEグループに追加
   - チームLINEグループを作成
   - BotをQRコードで招待

@@ -6,8 +6,8 @@ class Config:
     line_channel_access_token: str
     line_user_id: str
     line_channel_secret: str = ""
-    threshold_tokyo_23ku: str = "4"
-    threshold_nationwide: str = "5-"
+    threshold_tokyo_23ku: str = "5-"
+    threshold_nationwide: str = "6-"
     watchdog_enabled: bool = True
     weather_alert_enabled: bool = False
     email_enabled: bool = False
@@ -28,8 +28,8 @@ def load_config() -> Config:
         line_channel_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", ""),
         line_user_id              = os.getenv("LINE_USER_ID", ""),
         line_channel_secret       = os.getenv("LINE_CHANNEL_SECRET", ""),
-        threshold_tokyo_23ku      = os.getenv("THRESHOLD_TOKYO_23KU", "4"),
-        threshold_nationwide      = os.getenv("THRESHOLD_NATIONWIDE", "5-"),
+        threshold_tokyo_23ku      = os.getenv("THRESHOLD_TOKYO_23KU", "5-"),
+        threshold_nationwide      = os.getenv("THRESHOLD_NATIONWIDE", "6-"),
         watchdog_enabled          = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true",
         weather_alert_enabled     = os.getenv("WEATHER_ALERT_ENABLED", "false").lower() == "true",
         email_enabled             = os.getenv("EMAIL_ENABLED", "false").lower() == "true",
