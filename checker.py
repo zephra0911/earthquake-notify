@@ -86,62 +86,35 @@ def check_notify(
         reason="閾値以下のため通知不要", triggered_areas=[],
     )
 
-def build_alert_message(detail: QuakeDetail, result: CheckResult) -> str:
+def build_quake_message(detail: QuakeDetail, result: CheckResult) -> str:
+    if result.level == "alert":
+        action = "🔴 至急報告してください！（閾値：23区5強、全国6弱）"
+    else:
+        action = "🟡 閾値（23区5強、全国6弱）に満たないため、報告不要です。"
+
+    if detail.origin_time and detail.origin_time != "不明":
+        time_str = _format_time(detail.origin_time)
+    elif detail.report_time:
+        time_str = "(発表)" + detail.report_time.split("T")[1][:5]
+    else:
+        time_str = "不明"
+
     lines = [
-        "【地震速報】⚠️",
-        f"発生時刻: {_format_time(detail.origin_time)}",
-        f"最大震度: {_intensity_to_label(detail.max_intensity)}（速報値）",
-        f"津波:     {detail.tsunami}",
+        action,
         "",
-        "▼ 閾値超過エリア",
+        "▼地震情報",
+        f"発生時刻: {time_str}　最大震度: {_intensity_to_label(detail.max_intensity)}",
+        "閾値超過エリア:",
     ]
-    for item in result.triggered_areas:
-        lines.append(f"  {item['pref']} {item['area']}: {_intensity_to_label(item['intensity'])}")
-    lines += ["", "※詳細は続報でお知らせします", "⚠️ 対象システムの稼働確認を準備してください"]
-    return "\n".join(lines)
-
-def build_detail_message(detail: QuakeDetail, result: CheckResult) -> str:
-    lines = [
-        "【地震詳細・続報】",
-        f"震源地:   {detail.hypocenter or '調査中'}",
-        f"規模:     M{detail.magnitude or '調査中'}",
-        f"発生時刻: {_format_time(detail.origin_time)}",
-        f"最大震度: {_intensity_to_label(detail.max_intensity)}",
-        f"津波:     {detail.tsunami}",
-        "",
-        "▼ 主な観測地域",
-    ]
-    sorted_areas = sorted(
-        detail.area_intensities,
-        key=lambda x: _intensity_value(x.get("intensity", "")),
-        reverse=True,
-    )[:10]
-
-    current_pref = ""
-    for item in sorted_areas:
-        if item["pref"] != current_pref:
-            lines.append(f"─ {item['pref']} ─")
-            current_pref = item["pref"]
-        lines.append(f"  {item['area']}: {_intensity_to_label(item['intensity'])}")
-
-    lines += ["", f"【判定】{result.reason}", "⚠️ 対象システムの稼働確認を実施してください"]
-    return "\n".join(lines)
-
-def build_caution_message(detail: QuakeDetail, result: CheckResult) -> str:
-    lines = [
-        "【地震情報（注意）】",
-        f"発生時刻: {_format_time(detail.origin_time)}",
-        f"最大震度: {_intensity_to_label(detail.max_intensity)}",
-        f"津波:     {detail.tsunami}",
-        "",
-        "▼ 観測エリア",
-    ]
-    for item in result.triggered_areas:
-        lines.append(f"  {item['pref']} {item['area']}: {_intensity_to_label(item['intensity'])}")
+    for a in result.triggered_areas:
+        lines.append(f"  {a['pref']} {a['area']}: {_intensity_to_label(a['intensity'])}")
     lines += [
+        f"震源地: {detail.hypocenter or '調査中'}　規模: M{detail.magnitude or '調査中'}",
+        f"津波: {detail.tsunami}",
         "",
-        "揺れを感じた方はご注意ください。",
-        "※ 対象システムの稼働確認の参考情報です",
+        "▼ 他要注視観測エリア",
+        "なし",
+        # TODO: 収集バッチ処理実装時に他の地震をリストする
     ]
     return "\n".join(lines)
 

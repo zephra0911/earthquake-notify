@@ -18,7 +18,7 @@ NS = {
     "jmx_eb":  "http://xml.kishou.go.jp/jmaxml1/elementBasis/",
 }
 
-TARGET_TITLES = {"震度速報", "震源・震度に関する情報"}
+TARGET_TITLES = {"震源・震度に関する情報"}
 
 @dataclass
 class QuakeEntry:
@@ -29,7 +29,7 @@ class QuakeEntry:
 
 @dataclass
 class QuakeDetail:
-    event_id: str
+    event_id: str       # 気象庁公式EventID（jmx_ib1:EventID）。同一地震の複数Serial間で共通
     title: str
     origin_time: str
     max_intensity: str
@@ -128,6 +128,7 @@ def fetch_quake_detail(entry: QuakeEntry) -> Optional[QuakeDetail]:
 
 def _parse_quake_xml(event_id, title, xml_bytes):
     root = ET.fromstring(xml_bytes)
+    jma_event_id  = _find_text(root, ".//jmx_ib1:Head/jmx_ib1:EventID") or event_id
     report_time   = _find_text(root, ".//jmx_ib1:Head/jmx_ib1:ReportDateTime") or ""
     origin_time   = _find_text(root, ".//eb:Earthquake/eb:OriginTime") or "不明"
     tsunami_raw   = _find_text(root, ".//eb:Tsunami") or ""
@@ -148,7 +149,7 @@ def _parse_quake_xml(event_id, title, xml_bytes):
                 })
 
     return QuakeDetail(
-        event_id=event_id,
+        event_id=jma_event_id,
         title=title,
         origin_time=origin_time,
         max_intensity=max_intensity,

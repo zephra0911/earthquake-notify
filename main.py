@@ -7,7 +7,7 @@ from config import load_config
 from fetcher import fetch_feed, fetch_quake_detail
 from checker import (
     check_notify,
-    build_alert_message, build_detail_message, build_caution_message,
+    build_quake_message,
     _intensity_to_label, INTENSITY_ORDER,
 )
 from notifier.line import send_line_with_retry
@@ -20,8 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STATE_FILE = Path("state/notified_events.json")
-STATUS_ALERTED  = "ALERTED"
-STATUS_DETAILED = "DETAILED"
+STATUS_NOTIFIED = "NOTIFIED"
 
 JST = timezone(timedelta(hours=9))
 
@@ -30,13 +29,13 @@ def _format_updated_time(updated: str) -> str:
     if updated:
         try:
             dt = datetime.fromisoformat(updated).astimezone(JST)
-            return f"(発表){dt.strftime('%m/%d %H:%M')}"
+            return dt.strftime("%m/%d %H:%M")
         except Exception:
             pass
-    return "(発表)不明"
+    return "不明"
 
 
-def _build_subject(prefix: str, detail) -> str:
+def _build_subject(level: str, detail) -> str:
     origin = detail.origin_time
     if origin and origin != "不明":
         try:
@@ -60,7 +59,8 @@ def _build_subject(prefix: str, detail) -> str:
     else:
         area = "不明"
 
-    return f"【{prefix}:{time_str}】{intensity_label} {area}"
+    prefix = "【地震至急報告】" if level == "alert" else "【地震注意喚起】"
+    return f"{prefix} {time_str} {intensity_label} {area}"
 
 
 def load_state() -> dict:
@@ -115,88 +115,45 @@ def main():
 
 
 def _process_entry(entry, cfg, state: dict) -> bool:
-    event_id       = entry.event_id
-    current_status = state.get(event_id)
-
-    if entry.title == "震度速報":
-        if current_status in (STATUS_ALERTED, STATUS_DETAILED):
-            return False
-
-        detail = fetch_quake_detail(entry)
-        if detail is None:
-            return False
-
-        result = check_notify(
-            detail,
-            cfg.threshold_alert_tokyo_23ku,
-            cfg.threshold_alert_nationwide,
-            cfg.threshold_caution_tokyo_23ku,
-            cfg.threshold_caution_nationwide,
-        )
-        if not result.should_notify:
-            logger.info(f"通知不要: {event_id} / {result.reason}")
-            return False
-
-        logger.info(f"通知条件合致（速報/{result.level}）: {result.reason}")
-        if result.level == "alert":
-            message = build_alert_message(detail, result)
-            subject = _build_subject("速報", detail)
-        else:
-            message = build_caution_message(detail, result)
-            subject = _build_subject("注意速報", detail)
-
-        if cfg.line_enabled:
-            line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
-        else:
-            line_ok = True
-        if cfg.email_enabled:
-            send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, message)
-
-        if line_ok:
-            state[event_id] = STATUS_ALERTED
-            return True
-
-        logger.error(f"速報通知 LINE送信失敗: {event_id}")
+    if entry.title != "震源・震度に関する情報":
         return False
 
-    elif entry.title == "震源・震度に関する情報":
-        if current_status == STATUS_DETAILED:
-            return False
-        if current_status != STATUS_ALERTED:
-            return False
-
-        detail = fetch_quake_detail(entry)
-        if detail is None:
-            return False
-
-        result = check_notify(
-            detail,
-            cfg.threshold_alert_tokyo_23ku,
-            cfg.threshold_alert_nationwide,
-            cfg.threshold_caution_tokyo_23ku,
-            cfg.threshold_caution_nationwide,
-        )
-        if result.level == "alert":
-            message = build_detail_message(detail, result)
-            subject = _build_subject("続報", detail)
-        else:
-            message = build_caution_message(detail, result)
-            subject = _build_subject("注意続報", detail)
-
-        if cfg.line_enabled:
-            line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
-        else:
-            line_ok = True
-        if cfg.email_enabled:
-            send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, message)
-
-        if line_ok:
-            state[event_id] = STATUS_DETAILED
-            return True
-
-        logger.error(f"続報通知 LINE送信失敗: {event_id}")
+    detail = fetch_quake_detail(entry)
+    if detail is None:
         return False
 
+    event_id = detail.event_id  # 気象庁公式EventID（Serial間で共通）
+    if state.get(event_id) == STATUS_NOTIFIED:
+        logger.info(f"既に通知済みのためスキップ: {event_id}")
+        return False
+
+    result = check_notify(
+        detail,
+        cfg.threshold_alert_tokyo_23ku,
+        cfg.threshold_alert_nationwide,
+        cfg.threshold_caution_tokyo_23ku,
+        cfg.threshold_caution_nationwide,
+    )
+    if not result.should_notify:
+        logger.debug(f"通知不要: {event_id} / {result.reason}")
+        return False
+
+    logger.info(f"通知条件合致（{result.level}）: {result.reason}")
+    subject = _build_subject(result.level, detail)
+    body    = build_quake_message(detail, result)
+
+    if cfg.line_enabled:
+        line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, subject + "\n" + body)
+    else:
+        line_ok = True
+    if cfg.email_enabled:
+        send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, body)
+
+    if line_ok:
+        state[event_id] = STATUS_NOTIFIED
+        return True
+
+    logger.error(f"通知 LINE送信失敗: {event_id}")
     return False
 
 
