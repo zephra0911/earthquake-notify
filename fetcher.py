@@ -10,10 +10,11 @@ FEED_URL = "https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml"
 REQUEST_TIMEOUT = 10
 
 NS = {
-    "atom": "http://www.w3.org/2005/Atom",
-    "jmx": "http://xml.kishou.go.jp/jmaxml1/",
-    "eb":  "http://xml.kishou.go.jp/jmaxml1/body/seismology1/",
-    "jmx_eb": "http://xml.kishou.go.jp/jmaxml1/elementBasis/",
+    "atom":    "http://www.w3.org/2005/Atom",
+    "jmx":     "http://xml.kishou.go.jp/jmaxml1/",
+    "jmx_ib1": "http://xml.kishou.go.jp/jmaxml1/informationBasis1/",
+    "eb":      "http://xml.kishou.go.jp/jmaxml1/body/seismology1/",
+    "jmx_eb":  "http://xml.kishou.go.jp/jmaxml1/elementBasis/",
 }
 
 TARGET_TITLES = {"震度速報", "震源・震度に関する情報"}
@@ -34,6 +35,7 @@ class QuakeDetail:
     tsunami: str
     hypocenter: Optional[str] = None
     magnitude: Optional[str] = None
+    report_time: str = ""
     area_intensities: list = field(default_factory=list)
 
 def fetch_feed() -> list[QuakeEntry]:
@@ -86,6 +88,7 @@ def fetch_quake_detail(entry: QuakeEntry) -> Optional[QuakeDetail]:
 
 def _parse_quake_xml(event_id, title, xml_bytes):
     root = ET.fromstring(xml_bytes)
+    report_time   = _find_text(root, ".//jmx_ib1:Head/jmx_ib1:ReportDateTime") or ""
     origin_time   = _find_text(root, ".//eb:Earthquake/eb:OriginTime") or "不明"
     tsunami_raw   = _find_text(root, ".//eb:Tsunami") or ""
     tsunami       = _normalize_tsunami(tsunami_raw)
@@ -112,6 +115,7 @@ def _parse_quake_xml(event_id, title, xml_bytes):
         tsunami=tsunami,
         hypocenter=hypocenter,
         magnitude=magnitude,
+        report_time=report_time,
         area_intensities=area_intensities,
     )
 

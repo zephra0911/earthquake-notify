@@ -1,10 +1,15 @@
 import json
 import logging
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from config import load_config
 from fetcher import fetch_feed, fetch_quake_detail
-from checker import check_notify, build_alert_message, build_detail_message
+from checker import (
+    check_notify,
+    build_alert_message, build_detail_message, build_caution_message,
+    _intensity_to_label, INTENSITY_ORDER,
+)
 from notifier.line import send_line_with_retry
 from notifier.email import send_email_with_retry
 
@@ -17,6 +22,45 @@ logger = logging.getLogger(__name__)
 STATE_FILE = Path("state/notified_events.json")
 STATUS_ALERTED  = "ALERTED"
 STATUS_DETAILED = "DETAILED"
+
+JST = timezone(timedelta(hours=9))
+
+
+def _format_updated_time(updated: str) -> str:
+    if updated:
+        try:
+            dt = datetime.fromisoformat(updated).astimezone(JST)
+            return f"(発表){dt.strftime('%m/%d %H:%M')}"
+        except Exception:
+            pass
+    return "(発表)不明"
+
+
+def _build_subject(prefix: str, detail) -> str:
+    origin = detail.origin_time
+    if origin and origin != "不明":
+        try:
+            dt = datetime.fromisoformat(origin).astimezone(JST)
+            time_str = dt.strftime("%m/%d %H:%M")
+        except Exception:
+            time_str = _format_updated_time(detail.report_time)
+    else:
+        time_str = _format_updated_time(detail.report_time)
+
+    intensity_label = _intensity_to_label(detail.max_intensity)
+
+    if detail.hypocenter:
+        area = detail.hypocenter
+    elif detail.area_intensities:
+        top = max(
+            detail.area_intensities,
+            key=lambda x: INTENSITY_ORDER.get(x.get("intensity", ""), 0),
+        )
+        area = top.get("area", "不明")
+    else:
+        area = "不明"
+
+    return f"【{prefix}:{time_str}】{intensity_label} {area}"
 
 
 def load_state() -> dict:
@@ -82,14 +126,24 @@ def _process_entry(entry, cfg, state: dict) -> bool:
         if detail is None:
             return False
 
-        result = check_notify(detail, cfg.threshold_tokyo_23ku, cfg.threshold_nationwide)
+        result = check_notify(
+            detail,
+            cfg.threshold_alert_tokyo_23ku,
+            cfg.threshold_alert_nationwide,
+            cfg.threshold_caution_tokyo_23ku,
+            cfg.threshold_caution_nationwide,
+        )
         if not result.should_notify:
             logger.info(f"通知不要: {event_id} / {result.reason}")
             return False
 
-        logger.info(f"通知条件合致（速報）: {result.reason}")
-        message = build_alert_message(detail, result)
-        subject = "【地震速報】⚠️ PMH稼働確認を準備してください"
+        logger.info(f"通知条件合致（速報/{result.level}）: {result.reason}")
+        if result.level == "alert":
+            message = build_alert_message(detail, result)
+            subject = _build_subject("速報", detail)
+        else:
+            message = build_caution_message(detail, result)
+            subject = _build_subject("注意速報", detail)
 
         line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
         if cfg.email_enabled:
@@ -112,9 +166,19 @@ def _process_entry(entry, cfg, state: dict) -> bool:
         if detail is None:
             return False
 
-        result = check_notify(detail, cfg.threshold_tokyo_23ku, cfg.threshold_nationwide)
-        message = build_detail_message(detail, result)
-        subject = "【地震詳細・続報】⚠️ PMH稼働確認を実施してください"
+        result = check_notify(
+            detail,
+            cfg.threshold_alert_tokyo_23ku,
+            cfg.threshold_alert_nationwide,
+            cfg.threshold_caution_tokyo_23ku,
+            cfg.threshold_caution_nationwide,
+        )
+        if result.level == "alert":
+            message = build_detail_message(detail, result)
+            subject = _build_subject("続報", detail)
+        else:
+            message = build_caution_message(detail, result)
+            subject = _build_subject("注意続報", detail)
 
         line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
         if cfg.email_enabled:
