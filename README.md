@@ -85,6 +85,7 @@ earthquake-notify/
 | `THRESHOLD_ALERT_NATIONWIDE` | 全国・警報閾値（業務要件②） | `6-` |
 | `THRESHOLD_CAUTION_TOKYO_23KU` | 東京23区・注意閾値 | `4` |
 | `THRESHOLD_CAUTION_NATIONWIDE` | 全国・注意閾値 | `4` |
+| `LINE_ENABLED` | LINE通知オン/オフ | `true` |
 | `EMAIL_ENABLED` | メール通知オン/オフ | `false` |
 | `EMAIL_FROM` | 送信元Gmailアドレス | - |
 | `EMAIL_TO` | 送信先メールアドレス | - |
@@ -162,6 +163,10 @@ python main.py
 - [x] LINE「状況は？」サマリー返信機能
 
 ### 優先度低
+- [ ] 同一地震の重複通知抑制（収集ウィンドウ拡張）
+  - 現状、3分以内の同一titleエントリは最新1件に絞っているが、20分程度の抑制ウィンドウも検討
+  - `COLLECTION_DURATION_MINUTES=3`（デフォルト）として環境変数化することも検討
+
 - [ ] 続報（VXSE53）のEventID紐付けバグ修正
   - 現状、VXSE53のevent_idはVXSE51と異なるため、続報判定が機能しない
   - 震源地・地震発生時刻等で同一地震を紐付ける仕組みが必要

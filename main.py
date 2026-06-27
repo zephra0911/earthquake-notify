@@ -145,7 +145,10 @@ def _process_entry(entry, cfg, state: dict) -> bool:
             message = build_caution_message(detail, result)
             subject = _build_subject("注意速報", detail)
 
-        line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
+        if cfg.line_enabled:
+            line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
+        else:
+            line_ok = True
         if cfg.email_enabled:
             send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, message)
 
@@ -180,7 +183,10 @@ def _process_entry(entry, cfg, state: dict) -> bool:
             message = build_caution_message(detail, result)
             subject = _build_subject("注意続報", detail)
 
-        line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
+        if cfg.line_enabled:
+            line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, message)
+        else:
+            line_ok = True
         if cfg.email_enabled:
             send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, message)
 

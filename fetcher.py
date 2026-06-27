@@ -2,6 +2,7 @@ import requests
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -69,8 +70,47 @@ def fetch_feed() -> list[QuakeEntry]:
             xml_url  = link_el.get("href", ""),
         ))
 
-    logger.info(f"フィード取得完了: 対象エントリ {len(entries)} 件")
+    entries = _deduplicate_entries(entries)
+    logger.info(f"フィード取得完了: 対象エントリ {len(entries)} 件（重複排除後）")
     return entries
+
+
+def _parse_dt(updated: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(updated.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _deduplicate_entries(entries: list) -> list:
+    """同一titleのエントリのうち、発表時刻が3分以内のものを同一グループとみなし最新1件に絞る。"""
+    WINDOW_SECONDS = 180  # 3分
+
+    by_title: dict[str, list] = {}
+    for e in entries:
+        by_title.setdefault(e.title, []).append(e)
+
+    result = []
+    for title_entries in by_title.values():
+        sorted_entries = sorted(title_entries, key=lambda e: e.updated)
+
+        clusters: list[list] = []
+        current: list = [sorted_entries[0]]
+
+        for entry in sorted_entries[1:]:
+            prev_dt = _parse_dt(current[-1].updated)
+            this_dt = _parse_dt(entry.updated)
+            if prev_dt and this_dt and (this_dt - prev_dt).total_seconds() <= WINDOW_SECONDS:
+                current.append(entry)
+            else:
+                clusters.append(current)
+                current = [entry]
+        clusters.append(current)
+
+        for cluster in clusters:
+            result.append(max(cluster, key=lambda e: e.updated))
+
+    return result
 
 def fetch_quake_detail(entry: QuakeEntry) -> Optional[QuakeDetail]:
     try:
