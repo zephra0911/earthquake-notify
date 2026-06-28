@@ -20,7 +20,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STATE_FILE = Path("state/notified_events.json")
-STATUS_NOTIFIED = "NOTIFIED"
+
+_LEVEL_PRIORITY = {"none": 0, "caution": 1, "alert": 2}
+
+def _level_priority(level: str) -> int:
+    return _LEVEL_PRIORITY.get(level, 0)
 
 JST = timezone(timedelta(hours=9))
 
@@ -35,7 +39,7 @@ def _format_updated_time(updated: str) -> str:
     return "不明"
 
 
-def _build_subject(level: str, detail) -> str:
+def _build_subject(level: str, detail, is_escalation: bool = False) -> str:
     origin = detail.origin_time
     if origin and origin != "不明":
         try:
@@ -59,7 +63,10 @@ def _build_subject(level: str, detail) -> str:
     else:
         area = "不明"
 
-    prefix = "【地震至急報告】" if level == "alert" else "【地震注意喚起】"
+    if level == "alert":
+        prefix = "【地震至急報告（更新）】" if is_escalation else "【地震至急報告】"
+    else:
+        prefix = "【地震注意喚起】"
     return f"{prefix} {time_str} {intensity_label} {area}"
 
 
@@ -97,7 +104,7 @@ def main():
         logger.error(f"フィード取得失敗: {e}")
         return
 
-    logger.info(f"取得エントリ数: {len(entries)}")
+    logger.debug(f"取得エントリ数: {len(entries)}")
     changed = False
 
     for entry in entries:
@@ -122,10 +129,8 @@ def _process_entry(entry, cfg, state: dict) -> bool:
     if detail is None:
         return False
 
-    event_id = detail.event_id  # 気象庁公式EventID（Serial間で共通）
-    if state.get(event_id) == STATUS_NOTIFIED:
-        logger.info(f"既に通知済みのためスキップ: {event_id}")
-        return False
+    event_id      = detail.event_id  # 気象庁公式EventID（Serial間で共通）
+    current_level = state.get(event_id)  # None | "caution" | "alert"
 
     result = check_notify(
         detail,
@@ -138,9 +143,22 @@ def _process_entry(entry, cfg, state: dict) -> bool:
         logger.debug(f"通知不要: {event_id} / {result.reason}")
         return False
 
-    logger.info(f"通知条件合致（{result.level}）: {result.reason}")
-    subject = _build_subject(result.level, detail)
-    body    = build_quake_message(detail, result)
+    if current_level is not None and _level_priority(result.level) <= _level_priority(current_level):
+        logger.debug(f"既に同レベル以上で通知済みのためスキップ: {event_id} "
+                     f"（記録済み: {current_level} / 今回: {result.level}）")
+        return False
+
+    is_escalation = current_level is not None
+    if is_escalation:
+        logger.info(f"レベルがエスカレーションしたため再通知: {event_id} "
+                    f"（{current_level} → {result.level}）")
+    else:
+        logger.info(f"通知条件合致（{result.level}）: {result.reason}")
+
+    subject = _build_subject(result.level, detail, is_escalation=is_escalation)
+    body    = build_quake_message(detail, result,
+                                  is_escalation=is_escalation,
+                                  previous_level=current_level or "")
 
     if cfg.line_enabled:
         line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, subject + "\n" + body)
@@ -150,7 +168,7 @@ def _process_entry(entry, cfg, state: dict) -> bool:
         send_email_with_retry(cfg.email_from, cfg.email_to, cfg.email_password, subject, body)
 
     if line_ok:
-        state[event_id] = STATUS_NOTIFIED
+        state[event_id] = result.level
         return True
 
     logger.error(f"通知 LINE送信失敗: {event_id}")

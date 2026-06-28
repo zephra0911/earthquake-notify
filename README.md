@@ -44,8 +44,8 @@
 
 ```
 気象庁XML（eqvol_l.xml）
-     ↓ 5分毎ポーリング
-GitHub Actions（cron: */5 * * * *）
+     ↓ 1分毎ポーリング
+Raspberry Pi（cron: * * * * *）
      ↓ 震度判定
 state/notified_events.json（重複防止・状態管理）
      ↓ 閾値超過時
@@ -67,10 +67,7 @@ earthquake-notify/
 │   └── email.py         # Gmail SMTP送信
 ├── state/
 │   └── notified_events.json  # 通知済みイベント管理
-├── requirements.txt
-└── .github/
-    └── workflows/
-        └── monitor.yml  # GitHub Actions（5分毎自動実行）
+└── requirements.txt
 ```
 
 ---
@@ -94,43 +91,56 @@ earthquake-notify/
 
 ---
 
-## 環境変数の変更方法
+## 環境変数の設定方法（Raspberry Pi）
 
-GitHubリポジトリの **Settings → Secrets and variables → Actions** から設定します。
+### run.sh を使う場合
 
-### Secrets（機密情報）
+起動スクリプト `run.sh` の冒頭で直接設定します。
 
-**Settings → Secrets and variables → Actions → Secrets → New repository secret**
+```bash
+#!/bin/bash
+export LINE_CHANNEL_ACCESS_TOKEN="トークン"
+export LINE_USER_ID="ユーザーID"
+export THRESHOLD_ALERT_TOKYO_23KU="5+"
+export THRESHOLD_ALERT_NATIONWIDE="6-"
+export EMAIL_ENABLED="false"
 
-| Secret名 | 内容 |
-|----------|------|
-| `LINE_CHANNEL_ACCESS_TOKEN` | LINEチャネルアクセストークン |
-| `LINE_USER_ID` | LINE送信先ユーザーID or グループID |
-| `EMAIL_FROM` | 送信元Gmailアドレス（メール通知使用時） |
-| `EMAIL_TO` | 送信先メールアドレス（メール通知使用時） |
-| `EMAIL_PASSWORD` | Gmailアプリパスワード（メール通知使用時） |
+cd /home/pi/earthquake-notify
+python main.py
+```
 
-### Variables（非機密設定値）
+### .env ファイルを使う場合
 
-**Settings → Secrets and variables → Actions → Variables → New repository variable**
+```bash
+# .env
+LINE_CHANNEL_ACCESS_TOKEN=トークン
+LINE_USER_ID=ユーザーID
+THRESHOLD_ALERT_TOKYO_23KU=5+
+THRESHOLD_ALERT_NATIONWIDE=6-
+EMAIL_ENABLED=false
+```
 
-| Variable名 | 内容 | 推奨値 |
-|------------|------|--------|
-| `THRESHOLD_ALERT_TOKYO_23KU` | 東京23区・警報閾値 | `5+` |
-| `THRESHOLD_ALERT_NATIONWIDE` | 全国・警報閾値 | `6-` |
-| `THRESHOLD_CAUTION_TOKYO_23KU` | 東京23区・注意閾値 | `4` |
-| `THRESHOLD_CAUTION_NATIONWIDE` | 全国・注意閾値 | `4` |
-| `EMAIL_ENABLED` | メール通知オン/オフ | `false` |
+起動スクリプトで読み込みます。
+
+```bash
+set -a; source /home/pi/earthquake-notify/.env; set +a
+python /home/pi/earthquake-notify/main.py
+```
+
+> `.env` は `.gitignore` に追加してリポジトリに含めないようにしてください。
 
 ---
 
-## デプロイ方法
+## デプロイ方法（Raspberry Pi）
 
 ```bash
-git add .
-git commit -m "変更内容"
-git push origin main
-# GitHub Actionsが自動でmonitor.ymlを実行
+# Raspberry Pi上で更新を反映する
+cd /home/pi/earthquake-notify
+git pull origin main
+
+# cronの設定確認（1分毎）
+crontab -l
+# * * * * * /home/pi/earthquake-notify/run.sh >> /home/pi/earthquake-notify/logs/monitor.log 2>&1
 ```
 
 ---
@@ -163,10 +173,6 @@ python main.py
 - [x] LINE「状況は？」サマリー返信機能
 
 ### 優先度低
-- [ ] 同一地震の重複通知抑制（収集ウィンドウ拡張）
-  - 現状、3分以内の同一titleエントリは最新1件に絞っているが、20分程度の抑制ウィンドウも検討
-  - `COLLECTION_DURATION_MINUTES=3`（デフォルト）として環境変数化することも検討
-
 - [ ] チームメンバーをLINEグループに追加
   - チームLINEグループを作成し、BotをQRコードで招待
   - `LINE_USER_ID` をグループIDに変更

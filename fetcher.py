@@ -2,7 +2,6 @@ import requests
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
-from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,47 +78,9 @@ def fetch_feed() -> list[QuakeEntry]:
             xml_url  = link_el.get("href", ""),
         ))
 
-    entries = _deduplicate_entries(entries)
-    logger.info(f"フィード取得完了: 対象エントリ {len(entries)} 件（重複排除後）")
+    logger.debug(f"フィード取得完了: 対象エントリ {len(entries)} 件")
     return entries
 
-
-def _parse_dt(updated: str) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(updated.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-def _deduplicate_entries(entries: list) -> list:
-    """同一titleのエントリのうち、発表時刻が3分以内のものを同一グループとみなし最新1件に絞る。"""
-    WINDOW_SECONDS = 180  # 3分
-
-    by_title: dict[str, list] = {}
-    for e in entries:
-        by_title.setdefault(e.title, []).append(e)
-
-    result = []
-    for title_entries in by_title.values():
-        sorted_entries = sorted(title_entries, key=lambda e: e.updated)
-
-        clusters: list[list] = []
-        current: list = [sorted_entries[0]]
-
-        for entry in sorted_entries[1:]:
-            prev_dt = _parse_dt(current[-1].updated)
-            this_dt = _parse_dt(entry.updated)
-            if prev_dt and this_dt and (this_dt - prev_dt).total_seconds() <= WINDOW_SECONDS:
-                current.append(entry)
-            else:
-                clusters.append(current)
-                current = [entry]
-        clusters.append(current)
-
-        for cluster in clusters:
-            result.append(max(cluster, key=lambda e: e.updated))
-
-    return result
 
 def fetch_quake_detail(entry: QuakeEntry) -> Optional[QuakeDetail]:
     try:
@@ -216,147 +177,3 @@ def _normalize_tsunami(raw):
         if key in raw:
             return val
     return raw if raw else "なし"
-
-
-# ---------------------------------------------------------------------------
-# 気象警報・注意報 / 特別警報
-# ---------------------------------------------------------------------------
-# eqvol_l.xml は地震・火山専用のため、気象警報は別フィードから取得する
-WEATHER_FEED_URLS = [
-    "https://www.data.jma.go.jp/developer/xml/feed/extra.xml",    # 随時配信（VPTW50 等）
-    "https://www.data.jma.go.jp/developer/xml/feed/regular.xml",  # 定時配信（VPWW53 等）
-]
-WEATHER_TARGET_CODES = {"VPWW53", "VPTW50"}
-
-# 気象 XML パース用名前空間（atom は NS と共通）
-WNS = {
-    "atom":   "http://www.w3.org/2005/Atom",
-    "jmx":    "http://xml.kishou.go.jp/jmaxml1/",
-    "jmx_ib": "http://xml.kishou.go.jp/jmaxml1/informationBasis/",
-    "mete":   "http://xml.kishou.go.jp/jmaxml1/body/meteorology1/",
-}
-
-
-@dataclass
-class WeatherEntry:
-    event_id: str
-    title: str
-    updated: str
-    xml_url: str
-    code: str   # "VPWW53" or "VPTW50"
-
-
-@dataclass
-class WeatherDetail:
-    event_id:   str
-    info_type:  str       # 発表 / 更新 / 訂正 / 取消
-    info_kind:  str       # 気象警報・注意報 / 特別警報
-    headline:   str       # ヘッドライン本文
-    issued_at:  str       # 発表時刻（ISO）
-    areas:      list      # [{"name": "...", "warnings": [...], "cancelled": [...]}]
-    is_special: bool      # True = VPTW50（特別警報）
-
-
-def fetch_weather_feed() -> list[WeatherEntry]:
-    entries: list[WeatherEntry] = []
-    seen: set[str] = set()
-
-    for feed_url in WEATHER_FEED_URLS:
-        try:
-            resp = requests.get(feed_url, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            root = ET.fromstring(resp.content)
-            for entry_el in root.findall("atom:entry", WNS):
-                link_el = entry_el.find("atom:link", WNS)
-                if link_el is None:
-                    continue
-                xml_url = link_el.get("href", "")
-                code = next((c for c in WEATHER_TARGET_CODES if c in xml_url), None)
-                if not code:
-                    continue
-                id_el      = entry_el.find("atom:id", WNS)
-                title_el   = entry_el.find("atom:title", WNS)
-                updated_el = entry_el.find("atom:updated", WNS)
-                if None in (id_el, title_el, updated_el):
-                    continue
-                event_id = id_el.text or ""
-                if event_id in seen:
-                    continue
-                seen.add(event_id)
-                entries.append(WeatherEntry(
-                    event_id = event_id,
-                    title    = title_el.text or "",
-                    updated  = updated_el.text or "",
-                    xml_url  = xml_url,
-                    code     = code,
-                ))
-        except Exception as e:
-            logger.error(f"気象警報フィード取得失敗 ({feed_url}): {e}")
-
-    logger.info(f"気象警報フィード取得完了: {len(entries)} 件")
-    return entries
-
-
-def fetch_weather_detail(entry: WeatherEntry) -> Optional[WeatherDetail]:
-    try:
-        resp = requests.get(entry.xml_url, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        logger.error(f"気象警報XML取得失敗: {e}")
-        return None
-
-    try:
-        return _parse_weather_xml(entry.event_id, entry.code, resp.content)
-    except Exception as e:
-        logger.error(f"気象警報XMLパース失敗: {e}")
-        return None
-
-
-def _parse_weather_xml(event_id: str, code: str, xml_bytes: bytes) -> Optional[WeatherDetail]:
-    root = ET.fromstring(xml_bytes)
-
-    # 訓練・試験はスキップ
-    ctrl_status = _wfind_text(root, ".//jmx:Control/jmx:Status")
-    if ctrl_status in ("訓練", "試験"):
-        return None
-
-    info_type = _wfind_text(root, ".//jmx_ib:InfoType") or ""
-    info_kind = _wfind_text(root, ".//jmx_ib:InfoKind") or "気象警報・注意報"
-    headline  = _wfind_text(root, ".//jmx_ib:Headline/jmx_ib:Text") or ""
-    issued_at = _wfind_text(root, ".//jmx_ib:ReportDateTime") or ""
-
-    areas: list[dict] = []
-    for item_el in root.findall(".//mete:Warning/mete:Item", WNS):
-        area_name = _wfind_text(item_el, "mete:Area/mete:Name")
-        if not area_name:
-            continue
-        active: list[str]    = []
-        cancelled: list[str] = []
-        for kind_el in item_el.findall("mete:Kind", WNS):
-            w_type   = _wfind_text(kind_el, "mete:Property/mete:Type")
-            w_detail = _wfind_text(kind_el, "mete:Property/mete:Detail")
-            status_k = _wfind_text(kind_el, "mete:Status")
-            if not w_type:
-                continue
-            label = f"{w_type}（{w_detail}）" if w_detail else w_type
-            if status_k == "解除":
-                cancelled.append(label)
-            else:
-                active.append(label)
-        if active or cancelled:
-            areas.append({"name": area_name, "warnings": active, "cancelled": cancelled})
-
-    return WeatherDetail(
-        event_id   = event_id,
-        info_type  = info_type,
-        info_kind  = info_kind,
-        headline   = headline,
-        issued_at  = issued_at,
-        areas      = areas,
-        is_special = (code == "VPTW50"),
-    )
-
-
-def _wfind_text(element, path) -> Optional[str]:
-    el = element.find(path, WNS)
-    return el.text.strip() if el is not None and el.text else None

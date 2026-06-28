@@ -10,8 +10,6 @@ class Config:
     threshold_alert_nationwide:   str = "6-"
     threshold_caution_tokyo_23ku: str = "4"
     threshold_caution_nationwide: str = "4"
-    watchdog_enabled: bool = True
-    weather_alert_enabled: bool = False
     line_enabled: bool = True
     email_enabled: bool = False
     email_from: str = ""
@@ -35,8 +33,6 @@ def load_config() -> Config:
         threshold_alert_nationwide   = os.getenv("THRESHOLD_ALERT_NATIONWIDE",   "6-"),
         threshold_caution_tokyo_23ku = os.getenv("THRESHOLD_CAUTION_TOKYO_23KU", "4"),
         threshold_caution_nationwide = os.getenv("THRESHOLD_CAUTION_NATIONWIDE", "4"),
-        watchdog_enabled             = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true",
-        weather_alert_enabled        = os.getenv("WEATHER_ALERT_ENABLED", "false").lower() == "true",
         line_enabled                 = os.getenv("LINE_ENABLED", "true").lower() == "true",
         email_enabled                = os.getenv("EMAIL_ENABLED", "false").lower() == "true",
         email_from                   = os.getenv("EMAIL_FROM", ""),

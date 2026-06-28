@@ -86,7 +86,14 @@ def check_notify(
         reason="閾値以下のため通知不要", triggered_areas=[],
     )
 
-def build_quake_message(detail: QuakeDetail, result: CheckResult) -> str:
+_LEVEL_LABEL = {"alert": "至急報告", "caution": "注意喚起"}
+
+def build_quake_message(
+    detail: QuakeDetail,
+    result: CheckResult,
+    is_escalation: bool = False,
+    previous_level: str = "",
+) -> str:
     if result.level == "alert":
         action = "🔴 至急報告してください！（閾値：23区5強、全国6弱）"
     else:
@@ -99,8 +106,12 @@ def build_quake_message(detail: QuakeDetail, result: CheckResult) -> str:
     else:
         time_str = "不明"
 
-    lines = [
-        action,
+    lines = [action]
+    if is_escalation:
+        prev_label = _LEVEL_LABEL.get(previous_level, previous_level)
+        new_label  = _LEVEL_LABEL.get(result.level, result.level)
+        lines.append(f"⚠️ 震度情報が更新されました（{prev_label}→{new_label}）")
+    lines += [
         "",
         detail.headline_text,
         "▼地震情報",
