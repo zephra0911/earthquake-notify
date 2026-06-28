@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -20,6 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STATE_FILE = Path("state/notified_events.json")
+LOCK_FILE  = Path("state/.lock")
 
 _LEVEL_PRIORITY = {"none": 0, "caution": 1, "alert": 2}
 
@@ -70,6 +72,36 @@ def _build_subject(level: str, detail, is_escalation: bool = False) -> str:
     return f"{prefix} {time_str} {intensity_label} {area}"
 
 
+def _is_pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def acquire_lock() -> bool:
+    """ロックファイルを取得する。取得できた場合 True を返す。"""
+    if LOCK_FILE.exists():
+        try:
+            pid = int(LOCK_FILE.read_text().strip())
+            if _is_pid_running(pid):
+                logger.warning(f"前回の処理が継続中のため、今回の実行をスキップします (PID: {pid})")
+                return False
+            logger.warning(f"古いロックファイルを検出（PID {pid} は存在しない）。ロックを解放して処理を続行します")
+        except (ValueError, OSError):
+            logger.warning("ロックファイルの読み込みに失敗。ロックを解放して処理を続行します")
+        LOCK_FILE.unlink(missing_ok=True)
+
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LOCK_FILE.write_text(str(os.getpid()))
+    return True
+
+
+def release_lock() -> None:
+    LOCK_FILE.unlink(missing_ok=True)
+
+
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
@@ -88,37 +120,44 @@ def save_state(state: dict) -> None:
 
 
 def main():
-    logger.info("=== 地震監視 開始 ===")
-
-    try:
-        cfg = load_config()
-    except Exception as e:
-        logger.error(f"設定読み込み失敗: {e}")
+    if not acquire_lock():
         return
 
-    state = load_state()
-
     try:
-        entries = fetch_feed()
-    except Exception as e:
-        logger.error(f"フィード取得失敗: {e}")
-        return
+        logger.info("=== 地震監視 開始 ===")
 
-    logger.debug(f"取得エントリ数: {len(entries)}")
-    changed = False
-
-    for entry in entries:
         try:
-            if _process_entry(entry, cfg, state):
-                changed = True
+            cfg = load_config()
         except Exception as e:
-            logger.error(f"エントリ処理失敗 ({entry.event_id}): {e}")
+            logger.error(f"設定読み込み失敗: {e}")
+            return
 
-    if changed:
-        save_state(state)
-        logger.info("状態ファイルを更新しました")
+        state = load_state()
 
-    logger.info("=== 地震監視 完了 ===")
+        try:
+            entries = fetch_feed()
+        except Exception as e:
+            logger.error(f"フィード取得失敗: {e}")
+            return
+
+        logger.debug(f"取得エントリ数: {len(entries)}")
+        changed = False
+
+        for entry in entries:
+            try:
+                if _process_entry(entry, cfg, state):
+                    changed = True
+            except Exception as e:
+                logger.error(f"エントリ処理失敗 ({entry.event_id}): {e}")
+
+        if changed:
+            save_state(state)
+            logger.info("状態ファイルを更新しました")
+
+        logger.info("=== 地震監視 完了 ===")
+
+    finally:
+        release_lock()
 
 
 def _process_entry(entry, cfg, state: dict) -> bool:
