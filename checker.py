@@ -20,7 +20,6 @@ class CheckResult:
     should_notify: bool
     level: str          # "alert" | "caution" | "none"
     reason: str
-    triggered_areas: list
 
 def _intensity_value(intensity: str) -> int:
     return INTENSITY_ORDER.get(intensity.strip(), 0)
@@ -67,7 +66,7 @@ def check_notify(
             reasons.append("全国で{}以上を観測".format(_intensity_to_label(threshold_alert_nationwide)))
         return CheckResult(
             should_notify=True, level="alert",
-            reason=" / ".join(reasons), triggered_areas=alert_areas,
+            reason=" / ".join(reasons),
         )
 
     if caution_areas:
@@ -78,12 +77,12 @@ def check_notify(
             reasons.append("全国で{}以上を観測".format(_intensity_to_label(threshold_caution_nationwide)))
         return CheckResult(
             should_notify=True, level="caution",
-            reason=" / ".join(reasons), triggered_areas=caution_areas,
+            reason=" / ".join(reasons),
         )
 
     return CheckResult(
         should_notify=False, level="none",
-        reason="閾値以下のため通知不要", triggered_areas=[],
+        reason="閾値以下のため通知不要",
     )
 
 _LEVEL_LABEL = {"alert": "至急報告", "caution": "注意喚起"}

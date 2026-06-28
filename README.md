@@ -173,6 +173,11 @@ python main.py
 - [x] LINE「状況は？」サマリー返信機能
 
 ### 優先度低
+- [ ] LINE Webhook機能（「状況は？」への返信）の実装
+  - 現在 `LINE_CHANNEL_SECRET` は読み込まれているが未使用
+  - Raspberry Pi上でWebhookサーバーを立てる方法の検討が必要
+    （HTTPサーバーの常時起動、外部からのアクセス経路の確保等）
+
 - [ ] チームメンバーをLINEグループに追加
   - チームLINEグループを作成し、BotをQRコードで招待
   - `LINE_USER_ID` をグループIDに変更

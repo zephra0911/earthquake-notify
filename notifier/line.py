@@ -4,8 +4,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-LINE_PUSH_URL  = "https://api.line.me/v2/bot/message/push"
-LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 REQUEST_TIMEOUT = 10
 
 
@@ -52,31 +51,3 @@ def send_line_with_retry(channel_access_token: str, user_id: str, message: str, 
     return False
 
 
-def reply_line(channel_access_token: str, reply_token: str, message: str) -> bool:
-    headers = {
-        "Authorization": f"Bearer {channel_access_token}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
-    payload = {
-        "replyToken": reply_token,
-        "messages": [{"type": "text", "text": message}],
-    }
-
-    try:
-        resp = requests.post(
-            LINE_REPLY_URL,
-            headers=headers,
-            json=payload,
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        logger.info("LINE返信送信成功")
-        return True
-
-    except requests.HTTPError as e:
-        logger.error(f"LINE返信 HTTPエラー: {e} / レスポンス: {resp.text}")
-        return False
-
-    except requests.RequestException as e:
-        logger.error(f"LINE返信 通信エラー: {e}")
-        return False

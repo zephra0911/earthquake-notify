@@ -11,7 +11,6 @@ REQUEST_TIMEOUT = 10
 
 NS = {
     "atom":    "http://www.w3.org/2005/Atom",
-    "jmx":     "http://xml.kishou.go.jp/jmaxml1/",
     "jmx_ib1": "http://xml.kishou.go.jp/jmaxml1/informationBasis1/",
     "eb":      "http://xml.kishou.go.jp/jmaxml1/body/seismology1/",
     "jmx_eb":  "http://xml.kishou.go.jp/jmaxml1/elementBasis1/",
@@ -20,7 +19,7 @@ NS = {
 TARGET_TITLES = {"震源・震度に関する情報"}
 
 _HEADLINE_INTENSITY_MAP = {
-    "震度１": "1", "震度２": "2", "震度３": "3", "震度４": "4",
+    "震度４": "4",
     "震度５弱": "5-", "震度５強": "5+",
     "震度６弱": "6-", "震度６強": "6+", "震度７": "7",
 }
@@ -29,7 +28,6 @@ _HEADLINE_INTENSITY_MAP = {
 class QuakeEntry:
     event_id: str
     title: str
-    updated: str
     xml_url: str
 
 @dataclass
@@ -59,12 +57,11 @@ def fetch_feed() -> list[QuakeEntry]:
     entries = []
 
     for entry in root.findall("atom:entry", NS):
-        title_el   = entry.find("atom:title", NS)
-        id_el      = entry.find("atom:id", NS)
-        updated_el = entry.find("atom:updated", NS)
-        link_el    = entry.find("atom:link", NS)
+        title_el = entry.find("atom:title", NS)
+        id_el    = entry.find("atom:id", NS)
+        link_el  = entry.find("atom:link", NS)
 
-        if None in (title_el, id_el, updated_el, link_el):
+        if None in (title_el, id_el, link_el):
             continue
 
         title = title_el.text or ""
@@ -74,7 +71,6 @@ def fetch_feed() -> list[QuakeEntry]:
         entries.append(QuakeEntry(
             event_id = id_el.text or "",
             title    = title,
-            updated  = updated_el.text or "",
             xml_url  = link_el.get("href", ""),
         ))
 
