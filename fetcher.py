@@ -15,10 +15,16 @@ NS = {
     "jmx":     "http://xml.kishou.go.jp/jmaxml1/",
     "jmx_ib1": "http://xml.kishou.go.jp/jmaxml1/informationBasis1/",
     "eb":      "http://xml.kishou.go.jp/jmaxml1/body/seismology1/",
-    "jmx_eb":  "http://xml.kishou.go.jp/jmaxml1/elementBasis/",
+    "jmx_eb":  "http://xml.kishou.go.jp/jmaxml1/elementBasis1/",
 }
 
 TARGET_TITLES = {"震源・震度に関する情報"}
+
+_HEADLINE_INTENSITY_MAP = {
+    "震度１": "1", "震度２": "2", "震度３": "3", "震度４": "4",
+    "震度５弱": "5-", "震度５強": "5+",
+    "震度６弱": "6-", "震度６強": "6+", "震度７": "7",
+}
 
 @dataclass
 class QuakeEntry:
@@ -38,6 +44,9 @@ class QuakeDetail:
     magnitude: Optional[str] = None
     report_time: str = ""
     area_intensities: list = field(default_factory=list)
+    headline_text: str = ""
+    intensity_by_area: dict = field(default_factory=dict)
+    intensity_by_city: dict = field(default_factory=dict)
 
 def fetch_feed() -> list[QuakeEntry]:
     try:
@@ -135,7 +144,7 @@ def _parse_quake_xml(event_id, title, xml_bytes):
     tsunami       = _normalize_tsunami(tsunami_raw)
     max_intensity = _find_text(root, ".//eb:Intensity/eb:Observation/eb:MaxInt") or "不明"
     hypocenter    = _find_text(root, ".//eb:Earthquake/eb:Hypocenter/eb:Area/eb:Name")
-    magnitude     = _find_text(root, ".//eb:Earthquake/eb:jmx_eb:Magnitude")
+    magnitude     = _find_text(root, ".//eb:Earthquake/jmx_eb:Magnitude")
 
     area_intensities = []
     for pref_el in root.findall(".//eb:Intensity/eb:Observation/eb:Pref", NS):
@@ -148,6 +157,34 @@ def _parse_quake_xml(event_id, title, xml_bytes):
                     "pref": pref_name, "area": area_name, "intensity": intensity,
                 })
 
+    headline_text    = _find_text(root, ".//jmx_ib1:Head/jmx_ib1:Headline/jmx_ib1:Text") or ""
+    intensity_by_area: dict = {}
+    intensity_by_city: dict = {}
+    headline_el = root.find(".//jmx_ib1:Head/jmx_ib1:Headline", NS)
+    if headline_el is not None:
+        for info_el in headline_el.findall("jmx_ib1:Information", NS):
+            info_type = info_el.get("type", "")
+            if info_type == "震源・震度に関する情報（細分区域）":
+                target = intensity_by_area
+            elif info_type == "震源・震度に関する情報（市町村等）":
+                target = intensity_by_city
+            else:
+                continue
+            for item_el in info_el.findall("jmx_ib1:Item", NS):
+                kind_el = item_el.find("jmx_ib1:Kind/jmx_ib1:Name", NS)
+                if kind_el is None or not kind_el.text:
+                    continue
+                key = _HEADLINE_INTENSITY_MAP.get(kind_el.text.strip())
+                if key is None or key in ("1", "2"):
+                    continue
+                names = [
+                    el.text.strip()
+                    for el in item_el.findall("jmx_ib1:Areas/jmx_ib1:Area/jmx_ib1:Name", NS)
+                    if el.text
+                ]
+                if names:
+                    target[key] = names
+
     return QuakeDetail(
         event_id=jma_event_id,
         title=title,
@@ -158,6 +195,9 @@ def _parse_quake_xml(event_id, title, xml_bytes):
         magnitude=magnitude,
         report_time=report_time,
         area_intensities=area_intensities,
+        headline_text=headline_text,
+        intensity_by_area=intensity_by_area,
+        intensity_by_city=intensity_by_city,
     )
 
 def _find_text(element, path):

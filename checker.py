@@ -95,27 +95,33 @@ def build_quake_message(detail: QuakeDetail, result: CheckResult) -> str:
     if detail.origin_time and detail.origin_time != "不明":
         time_str = _format_time(detail.origin_time)
     elif detail.report_time:
-        time_str = "(発表)" + detail.report_time.split("T")[1][:5]
+        time_str = detail.report_time.split("T")[1][:5]
     else:
         time_str = "不明"
 
     lines = [
         action,
         "",
+        detail.headline_text,
         "▼地震情報",
         f"発生時刻: {time_str}　最大震度: {_intensity_to_label(detail.max_intensity)}",
-        "閾値超過エリア:",
-    ]
-    for a in result.triggered_areas:
-        lines.append(f"  {a['pref']} {a['area']}: {_intensity_to_label(a['intensity'])}")
-    lines += [
         f"震源地: {detail.hypocenter or '調査中'}　規模: M{detail.magnitude or '調査中'}",
-        f"津波: {detail.tsunami}",
-        "",
-        "▼ 他要注視観測エリア",
-        "なし",
-        # TODO: 収集バッチ処理実装時に他の地震をリストする
     ]
+
+    if detail.intensity_by_area:
+        lines.append("震度別エリア（細分区域）:")
+        for key in sorted(detail.intensity_by_area, key=lambda k: INTENSITY_ORDER.get(k, 0), reverse=True):
+            areas = "、".join(detail.intensity_by_area[key])
+            lines.append(f"{_intensity_to_label(key)}: {areas}")
+
+    if detail.intensity_by_city:
+        lines.append("市町村レベルの最大震度:")
+        for key in sorted(detail.intensity_by_city, key=lambda k: INTENSITY_ORDER.get(k, 0), reverse=True):
+            cities = "、".join(detail.intensity_by_city[key])
+            lines.append(f"{_intensity_to_label(key)}: {cities}")
+
+    lines.append(f"津波: {detail.tsunami}")
+
     return "\n".join(lines)
 
 def _intensity_to_label(intensity: str) -> str:
