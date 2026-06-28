@@ -175,7 +175,7 @@ def _parse_quake_xml(event_id, title, xml_bytes):
                 if kind_el is None or not kind_el.text:
                     continue
                 key = _HEADLINE_INTENSITY_MAP.get(kind_el.text.strip())
-                if key is None or key in ("1", "2"):
+                if key is None or key in ("1", "2", "3"):
                     continue
                 names = [
                     el.text.strip()

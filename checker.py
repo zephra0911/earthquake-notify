@@ -109,17 +109,20 @@ def build_quake_message(detail: QuakeDetail, result: CheckResult) -> str:
     ]
 
     if detail.intensity_by_area:
+        lines.append("")
         lines.append("震度別エリア（細分区域）:")
         for key in sorted(detail.intensity_by_area, key=lambda k: INTENSITY_ORDER.get(k, 0), reverse=True):
             areas = "、".join(detail.intensity_by_area[key])
             lines.append(f"{_intensity_to_label(key)}: {areas}")
 
     if detail.intensity_by_city:
+        lines.append("")
         lines.append("市町村レベルの最大震度:")
         for key in sorted(detail.intensity_by_city, key=lambda k: INTENSITY_ORDER.get(k, 0), reverse=True):
             cities = "、".join(detail.intensity_by_city[key])
             lines.append(f"{_intensity_to_label(key)}: {cities}")
 
+    lines.append("")
     lines.append(f"津波: {detail.tsunami}")
 
     return "\n".join(lines)
