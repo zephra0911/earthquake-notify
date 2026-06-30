@@ -66,9 +66,9 @@ def _build_subject(level: str, detail, is_escalation: bool = False) -> str:
         area = "不明"
 
     if level == "alert":
-        prefix = "【地震至急報告（更新）】" if is_escalation else "【地震至急報告】"
+        prefix = "🔴【地震至急報告（更新）】" if is_escalation else "🔴【地震至急報告】"
     else:
-        prefix = "【地震注意喚起】"
+        prefix = "🟡【地震注意喚起】"
     return f"{prefix} {time_str} {intensity_label} {area}"
 
 
