@@ -92,6 +92,7 @@ def build_quake_message(
     result: CheckResult,
     is_escalation: bool = False,
     previous_level: str = "",
+    version: str = "",
 ) -> str:
     if result.level == "alert":
         action = "🔴 至急報告してください！（閾値：23区5強、全国6弱）"
@@ -134,6 +135,8 @@ def build_quake_message(
 
     lines.append("")
     lines.append(f"津波: {detail.tsunami}")
+    lines.append("")
+    lines.append(f"sent by earthquake-notify (m.sono) [{version}]")
 
     return "\n".join(lines)
 

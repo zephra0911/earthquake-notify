@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -22,6 +23,16 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE = Path("state/notified_events.json")
 LOCK_FILE  = Path("state/.lock")
+
+def _get_version() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+VERSION = _get_version()
 
 _LEVEL_PRIORITY = {"none": 0, "caution": 1, "alert": 2}
 
@@ -197,7 +208,8 @@ def _process_entry(entry, cfg, state: dict) -> bool:
     subject = _build_subject(result.level, detail, is_escalation=is_escalation)
     body    = build_quake_message(detail, result,
                                   is_escalation=is_escalation,
-                                  previous_level=current_level or "")
+                                  previous_level=current_level or "",
+                                  version=VERSION)
 
     if cfg.line_enabled:
         line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, subject + "\n" + body)
