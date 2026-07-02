@@ -1,0 +1,13 @@
+[Unit]
+Description=Earthquake Display Monitor
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/makoto/earthquake-notify/display_monitor.py
+WorkingDirectory=/home/makoto/earthquake-notify
+Restart=always
+RestartSec=5
+User=makoto
+
+[Install]
+WantedBy=multi-user.target

@@ -6,4 +6,4 @@ __pycache__/
 .env
 .claude/
 key.json
-state/notified_events.json
+state/

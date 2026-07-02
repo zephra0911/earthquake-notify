@@ -21,8 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path("state/notified_events.json")
-LOCK_FILE  = Path("state/.lock")
+STATE_FILE          = Path("state/notified_events.json")
+LOCK_FILE           = Path("state/.lock")
+DISPLAY_STATUS_FILE = Path("state/display_status.json")
 
 def _get_version() -> str:
     result = subprocess.run(
@@ -113,6 +114,18 @@ def release_lock() -> None:
     LOCK_FILE.unlink(missing_ok=True)
 
 
+def _save_display_status(display: dict) -> None:
+    display["last_run"] = datetime.now(JST).isoformat(timespec="seconds")
+    DISPLAY_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        DISPLAY_STATUS_FILE.write_text(
+            json.dumps(display, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.warning(f"display_status.json 書き込み失敗: {e}")
+
+
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
@@ -134,6 +147,8 @@ def main():
     if not acquire_lock():
         return
 
+    display = {"status": "ok", "error_code": None, "alert_level": "none", "max_intensity": None}
+
     try:
         logger.info("=== 地震監視 開始 ===")
 
@@ -141,6 +156,7 @@ def main():
             cfg = load_config()
         except Exception as e:
             logger.error(f"設定読み込み失敗: {e}")
+            display.update({"status": "error", "error_code": "E-03"})
             return
 
         state = load_state()
@@ -149,6 +165,7 @@ def main():
             entries = fetch_feed()
         except Exception as e:
             logger.error(f"フィード取得失敗: {e}")
+            display.update({"status": "error", "error_code": "E-02"})
             return
 
         logger.debug(f"取得エントリ数: {len(entries)}")
@@ -156,8 +173,13 @@ def main():
 
         for entry in entries:
             try:
-                if _process_entry(entry, cfg, state):
+                notif = _process_entry(entry, cfg, state)
+                if notif:
                     changed = True
+                    level, max_intensity = notif
+                    if _level_priority(level) > _level_priority(display["alert_level"]):
+                        display["alert_level"] = level
+                        display["max_intensity"] = max_intensity
             except Exception as e:
                 logger.error(f"エントリ処理失敗 ({entry.event_id}): {e}")
 
@@ -168,16 +190,17 @@ def main():
         logger.info("=== 地震監視 完了 ===")
 
     finally:
+        _save_display_status(display)
         release_lock()
 
 
-def _process_entry(entry, cfg, state: dict) -> bool:
+def _process_entry(entry, cfg, state: dict):
     if entry.title != "震源・震度に関する情報":
-        return False
+        return None
 
     detail = fetch_quake_detail(entry)
     if detail is None:
-        return False
+        return None
 
     event_id      = detail.event_id  # 気象庁公式EventID（Serial間で共通）
     current_level = state.get(event_id)  # None | "caution" | "alert"
@@ -191,12 +214,12 @@ def _process_entry(entry, cfg, state: dict) -> bool:
     )
     if not result.should_notify:
         logger.debug(f"通知不要: {event_id} / {result.reason}")
-        return False
+        return None
 
     if current_level is not None and _level_priority(result.level) <= _level_priority(current_level):
         logger.debug(f"既に同レベル以上で通知済みのためスキップ: {event_id} "
                      f"（記録済み: {current_level} / 今回: {result.level}）")
-        return False
+        return None
 
     is_escalation = current_level is not None
     if is_escalation:
@@ -220,10 +243,10 @@ def _process_entry(entry, cfg, state: dict) -> bool:
 
     if line_ok:
         state[event_id] = result.level
-        return True
+        return (result.level, detail.max_intensity)
 
     logger.error(f"通知 LINE送信失敗: {event_id}")
-    return False
+    return None
 
 
 if __name__ == "__main__":
