@@ -15,6 +15,10 @@ class Config:
     email_from: str = ""
     email_to: str = ""
     email_password: str = ""
+    info_link_title: str = "Yahoo!天気・災害"
+    info_link_url: str = "https://typhoon.yahoo.co.jp/weather/jp/earthquake/"
+    show_intensity_areas: bool = True
+    footer_note: str = "※電源やNW障害により通知されないこともあるよ。"
 
 def load_config() -> Config:
     required = {
@@ -38,4 +42,8 @@ def load_config() -> Config:
         email_from                   = os.getenv("EMAIL_FROM", ""),
         email_to                     = os.getenv("EMAIL_TO", ""),
         email_password               = os.getenv("EMAIL_PASSWORD", ""),
+        info_link_title              = os.getenv("INFO_LINK_TITLE", "Yahoo!天気・災害"),
+        info_link_url                = os.getenv("INFO_LINK_URL", "https://typhoon.yahoo.co.jp/weather/jp/earthquake/"),
+        show_intensity_areas         = os.getenv("SHOW_INTENSITY_AREAS", "true").lower() == "true",
+        footer_note                  = os.getenv("FOOTER_NOTE", "※電源やNW障害により通知されないこともあるよ。"),
     )

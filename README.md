@@ -78,16 +78,22 @@ earthquake-notify/
 |--------|------|-----------|
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINEチャネルアクセストークン | 必須 |
 | `LINE_USER_ID` | LINE送信先ユーザーID or グループID | 必須 |
-| `THRESHOLD_ALERT_TOKYO_23KU` | 東京23区・警報閾値（業務要件①） | `5+` |
-| `THRESHOLD_ALERT_NATIONWIDE` | 全国・警報閾値（業務要件②） | `6-` |
-| `THRESHOLD_CAUTION_TOKYO_23KU` | 東京23区・注意閾値 | `4` |
-| `THRESHOLD_CAUTION_NATIONWIDE` | 全国・注意閾値 | `4` |
+| `THRESHOLD_ALERT_TOKYO_23KU` | 東京23区・警報閾値（業務要件①）※1 | `5+` |
+| `THRESHOLD_ALERT_NATIONWIDE` | 全国・警報閾値（業務要件②）※1 | `6-` |
+| `THRESHOLD_CAUTION_TOKYO_23KU` | 東京23区・注意閾値※1 | `4` |
+| `THRESHOLD_CAUTION_NATIONWIDE` | 全国・注意閾値※1 | `4` |
 | `LINE_ENABLED` | LINE通知オン/オフ | `true` |
 | `EMAIL_ENABLED` | メール通知オン/オフ | `false` |
 | `EMAIL_FROM` | 送信元Gmailアドレス | - |
 | `EMAIL_TO` | 送信先メールアドレス | - |
 | `EMAIL_PASSWORD` | Gmailアプリパスワード | - |
 | `LINE_CHANNEL_SECRET` | LINE Webhookの署名検証用シークレット | - |
+| `INFO_LINK_TITLE` | 本文末尾のリンクタイトル | `Yahoo!天気・災害` |
+| `INFO_LINK_URL` | 本文末尾のリンクURL（空の場合はリンク行を省略） | `https://typhoon.yahoo.co.jp/weather/jp/earthquake/` |
+| `SHOW_INTENSITY_AREAS` | 震度別エリア（細分区域）の表示ON/OFF | `true` |
+| `FOOTER_NOTE` | 本文末尾の注意書き（空の場合は省略） | `※電源やNW障害により通知されないこともあるよ。` |
+
+> ※1 震度閾値の設定可能値: `1` `2` `3` `4` `5-` `5+` `6-` `6+` `7`
 
 ---
 

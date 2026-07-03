@@ -93,11 +93,15 @@ def build_quake_message(
     is_escalation: bool = False,
     previous_level: str = "",
     version: str = "",
+    info_link_title: str = "",
+    info_link_url: str = "",
+    show_intensity_areas: bool = True,
+    footer_note: str = "",
 ) -> str:
     if result.level == "alert":
-        action = "🔴 至急報告してください！（閾値：23区5強、全国6弱）"
+        action = "至急報告してください！（閾値：23区5強、全国6弱）"
     else:
-        action = "🟡 閾値（23区5強、全国6弱）に満たないため、報告不要です。"
+        action = "閾値（23区5強、全国6弱）に満たないため、報告不要です。"
 
     if detail.origin_time and detail.origin_time != "不明":
         time_str = _format_time(detail.origin_time)
@@ -119,7 +123,7 @@ def build_quake_message(
         f"震源地: {detail.hypocenter or '調査中'}　規模: M{detail.magnitude or '調査中'}",
     ]
 
-    if detail.intensity_by_area:
+    if show_intensity_areas and detail.intensity_by_area:
         lines.append("")
         lines.append("震度別エリア（細分区域）:")
         for key in sorted(detail.intensity_by_area, key=lambda k: INTENSITY_ORDER.get(k, 0), reverse=True):
@@ -135,6 +139,11 @@ def build_quake_message(
 
     lines.append("")
     lines.append(f"津波: {detail.tsunami}")
+    if info_link_url:
+        lines.append("")
+        lines.append(f"🔗 {info_link_title}: {info_link_url}")
+    if footer_note:
+        lines.append(footer_note)
     lines.append("")
     lines.append(f"sent by earthquake-notify (m.sono) [{version}]")
 

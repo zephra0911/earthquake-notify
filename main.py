@@ -232,7 +232,11 @@ def _process_entry(entry, cfg, state: dict):
     body    = build_quake_message(detail, result,
                                   is_escalation=is_escalation,
                                   previous_level=current_level or "",
-                                  version=VERSION)
+                                  version=VERSION,
+                                  info_link_title=cfg.info_link_title,
+                                  info_link_url=cfg.info_link_url,
+                                  show_intensity_areas=cfg.show_intensity_areas,
+                                  footer_note=cfg.footer_note)
 
     if cfg.line_enabled:
         line_ok = send_line_with_retry(cfg.line_channel_access_token, cfg.line_user_id, subject + "\n" + body)
